@@ -429,6 +429,28 @@ def calculate_payoff_at_price(position: OptionPosition, price: float) -> float:
     return total_payoff
 
 
+def calculate_rr_at_target(position: OptionPosition, target_price: float) -> float:
+    """
+    Calculate reward-to-risk ratio at target price.
+    
+    Reward = payoff at target (using calculate_payoff_at_price)
+    Risk = entry_cost
+    
+    Returns R:R ratio (e.g., 2.5 means 2.5:1 reward-to-risk)
+    
+    Args:
+        position: OptionPosition
+        target_price: Target price to calculate payoff
+        
+    Returns:
+        R:R ratio (reward-to-risk)
+    """
+    payoff_at_target = calculate_payoff_at_price(position, target_price)
+    if position.entry_cost > 0:
+        return payoff_at_target / position.entry_cost
+    return 0.0
+
+
 def select_best_structure(
     direction: str,
     spot: float,

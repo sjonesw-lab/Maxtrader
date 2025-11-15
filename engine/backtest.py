@@ -14,7 +14,8 @@ from engine.options_engine import (
     OptionPosition,
     generate_strikes,
     select_best_structure,
-    simulate_option_pnl_over_path
+    simulate_option_pnl_over_path,
+    calculate_rr_at_target
 )
 
 
@@ -92,6 +93,11 @@ class Backtest:
         )
         
         position.target = signal.target
+        
+        rr_ratio = calculate_rr_at_target(position, signal.target)
+        
+        if rr_ratio < 2.0:
+            return None
         
         eod_time = entry_time.replace(hour=16, minute=0, second=0, microsecond=0)
         max_exit_time = entry_time + pd.Timedelta(minutes=max_bars_held)

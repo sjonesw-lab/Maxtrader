@@ -293,3 +293,30 @@ def detect_order_blocks(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop(['is_bearish_candle', 'is_bullish_candle'], axis=1)
     
     return df
+
+
+def detect_all_structures(df: pd.DataFrame, displacement_threshold: float = 1.0) -> pd.DataFrame:
+    """
+    Detect all ICT structures in one function call.
+    
+    Runs all detection functions:
+    - Liquidity sweeps
+    - Displacement candles
+    - Fair Value Gaps (FVG)
+    - Market Structure Shifts (MSS)
+    - Order Blocks (OB)
+    
+    Args:
+        df: DataFrame with OHLC data and session high/low columns
+        displacement_threshold: ATR multiplier for displacement (default: 1.0)
+        
+    Returns:
+        pd.DataFrame: DataFrame with all ICT structure columns added
+    """
+    df = detect_liquidity_sweeps(df)
+    df = detect_displacement(df, atr_period=14, threshold=displacement_threshold)
+    df = detect_fvgs(df)
+    df = detect_mss(df)
+    df = detect_order_blocks(df)
+    
+    return df
