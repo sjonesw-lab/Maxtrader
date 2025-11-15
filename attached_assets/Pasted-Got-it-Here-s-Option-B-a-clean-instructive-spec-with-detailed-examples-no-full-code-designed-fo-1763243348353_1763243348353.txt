@@ -1,0 +1,273 @@
+Got it. Here’s Option B: a clean, instructive spec with detailed examples, no full code, designed for the Replit team that has already built the Normal Vol strategy.
+
+It tells them exactly what to do, what to double-check, and explicitly asks for the confirmation you want (Daily+4H vs 4H-only).
+
+You can send this as-is.
+
+⸻
+
+📦 MaxTrader – Replit Build & Validation Instructions (Option B)
+
+Goal: You have already built the Normal Volatility strategy and backtested it.
+This document tells you:
+	•	What must be true about that Normal Vol implementation,
+	•	How to route behavior by volatility regime,
+	•	How to design High Vol and Ultra-Low Vol strategies,
+	•	What to validate against the known results,
+	•	And asks you explicitly to confirm whether you are using Daily+4H or only 4H in Confluence.
+
+⸻
+
+1. What’s Already Built & What Must Be Confirmed
+
+You already built and backtested the Normal Volatility strategy. It uses:
+	•	ATR-based Renko bricks
+	•	Wave logic (3+ bricks)
+	•	Confluence engine
+	•	Options allocator
+	•	Risk manager
+
+From our prior tests, this implementation produced strong results in Aug–Nov 2025.
+
+🔴 However, we must clarify:
+
+Are you currently using:
+	•	4H only, or
+	•	Daily + 4H
+in your ConfluenceEngine?
+
+The design that yielded the best results uses both Daily AND 4H.
+Please explicitly confirm:
+	1.	What inputs your current confluence logic uses, and
+	2.	If it is not Daily+4H, update/extend it to match the spec below.
+
+⸻
+
+2. Volatility Regime Routing (Core Concept)
+
+We want three regimes, based on VIX and ATR(%):
+
+class Regime:
+    NORMAL    = "normal"      # sweet spot
+    HIGH_VOL  = "high_vol"    # COVID-like
+    ULTRA_LOW = "ultra_low"   # dead calm
+
+Regime Detection
+
+def detect_regime(vix_value: float, atr_pct: float) -> str:
+    if vix_value < 13 or atr_pct < 0.5:
+        return Regime.ULTRA_LOW
+    elif vix_value > 30:
+        return Regime.HIGH_VOL
+    else:
+        return Regime.NORMAL
+
+Strategy Router (Example Interface)
+
+You don’t have to copy this exact code, but the behavior should be:
+
+router.on_brick(symbol, brick, vix, atr_pct, state):
+    regime = detect_regime(vix, atr_pct)
+
+    if regime == NORMAL:
+        normal_strategy.on_brick(symbol, brick, state)
+    elif regime == HIGH_VOL:
+        high_vol_strategy.on_brick(symbol, brick, state)
+    else:
+        ultra_low_strategy.on_brick(symbol, brick, state)
+
+	•	NormalVolStrategy = your existing system (validated).
+	•	HighVolStrategy and UltraLowVolStrategy are new modules; they can start simple but must respect the regime idea.
+
+⸻
+
+3. NormalVolStrategy – Behavior That Must Match (Existing System)
+
+This is what your current system must look like, logically.
+If it already does, good — just confirm and validate.
+
+3.1 Renko & Wave Rules
+	•	Brick size: brick_size = ATR(14) × 0.8
+	•	Valid wave: at least 3 bricks in same direction
+	•	Retrace classification:
+	•	Shallow: < 33%
+	•	Healthy: 33% – 62%
+	•	Deep: > 62% → skip trade
+	•	Entry limit:
+	•	Distance from P2 ≤ 1.5 × brick_size
+
+3.2 Confluence (This is where Daily vs 4H matters)
+
+Required behavior:
+	•	Use both:
+	•	df_daily for trend slope,
+	•	df_4h for VWAP and context.
+
+Example (conceptual):
+
+# Daily Trend
+slope = (daily_close[-1] - daily_close[-5]) / daily_close[-5]
+slope_scaled = tanh(abs(slope) / 0.02)  # compress extremes
+
+# 4H VWAP position (above/below)
+# 4H POC/value proxy (above/below/at)
+# Build context and add small confidence bonuses
+
+Confidence:
+
+conf = 0.4 + 0.4 * slope_scaled  # plus small bonuses for VWAP/POC alignment
+conf = max(0.0, min(1.0, conf))
+
+Gate:
+	•	Backtest: BT_MIN_CONF ~ 0.4–0.6
+	•	Live recommended: ≥ 0.60
+
+🔴 We need you to confirm whether this confluence is currently using both Daily and 4H, or only 4H.
+
+3.3 Options Allocator
+
+Allocate structures based on direction, confidence, and IVR:
+	•	High IVR > 70 → favor credit spreads (put/call credit)
+	•	Low IVR < 30 → favor debit spreads / flies (broken-wing when confidence is high)
+	•	Normal IVR → mostly debit, single-leg only when confidence is very high.
+
+DTE: 5–15 days (10 preferred).
+
+3.4 Exit Mode (Targets + ATR, No Raw Stops)
+
+Exit logic:
+	•	Mode: "target_or_atr"
+	•	Use:
+	•	Price targets based on wave height (e.g., 1.0× and 1.618× height).
+	•	ATR exits:
+	•	TP: move ≥ 1.5 ATR
+	•	Trail: retrace from peak ≥ 0.8 ATR
+	•	Options expiry fallback.
+
+No underlying hard stop-loss; options structure contains risk.
+
+⸻
+
+4. HighVolStrategy – Example Logic (VIX > 30)
+
+This does not need to be fully implemented immediately, but architecture must allow it.
+
+Intent
+
+In high volatility (COVID 2020 style):
+	•	We don’t want the full Renko-wave system firing everywhere.
+	•	We want a small, tight, price-action system focusing on:
+	•	Liquidity sweeps,
+	•	Reclaims,
+	•	Short, high-quality trades.
+
+Example Behavior
+	1.	Identify key liquidity levels:
+	•	Prior day high/low,
+	•	Overnight high/low,
+	•	Recent swing highs/lows (15m–1H).
+	2.	Long setup example:
+	•	VIX > 30
+	•	Price sweeps below prior low (stop run), prints a strong wick
+	•	Next bar closes back above that low (reclaim)
+	•	Optional IFVG: price breaks through an FVG in opposite direction and retests.
+	3.	Entry:
+	•	Long on reclaim candle close or on retest of IFVG.
+	4.	Stop:
+	•	A bit below sweep low (tight).
+	5.	Targets:
+	•	VWAP, range mid, or conservative ATR-based target.
+	6.	Risk:
+	•	0.5–1% of account per trade,
+	•	Max 2–3 concurrent positions.
+
+This is institutional-flow-aligned: you only take trades after liquidity has been harvested and price confirms a rejection.
+
+⸻
+
+5. UltraLowVolStrategy – Example Logic (VIX < 13 or ATR% < 0.5%)
+
+In ultra-low VIX:
+	•	The wave retracement system breaks down.
+	•	Markets grind, ranges are tight, moves are small.
+
+Strategy should be:
+	•	More like VWAP mean-reversion and grind-following, not wave/correction.
+
+Example Behavior
+	1.	Range Mean-Reversion
+	•	Define intraday range from first 60–90 minutes.
+	•	Use VWAP as anchor.
+	•	Fade extremes:
+	•	When price pushes to range edges or ±N std dev from VWAP,
+	•	Small sweep beyond range edge,
+	•	Reclaim into the range → fade back to VWAP.
+	2.	Grind-with-Trend
+	•	Use Daily/4H to define bias (up or down).
+	•	Join slow trend:
+	•	Small dip to VWAP in an uptrend + small liquidity grab + reclaim
+	•	Small pop above VWAP in downtrend + reject.
+	3.	Risk:
+	•	1–1.5% per trade,
+	•	Max 3–4 positions,
+	•	Targets at 0.5–0.75 ATR or next near-term range boundary.
+
+Again, price-action + institutional-flow aligned: we’re trading around value, not looking for big impulse waves that don’t exist in this regime.
+
+⸻
+
+6. Tick-First Requirement (Live Mode)
+
+For live trading, you must:
+	•	Use trade ticks from Alpaca’s stream, not just minute bars.
+	•	Build 1m OHLCV internally from ticks.
+	•	Build Renko bricks off tick-based price changes.
+	•	Keep websocket on_message non-blocking by using a queue + worker.
+
+Backtest mode can approximate ticks from minute bars as long as it reproduces the known backtest results.
+
+⸻
+
+7. Validation Tasks
+
+7.1 Normal Vol (Baseline)
+
+You already ran Aug–Nov 2025 QQQ tests.
+Validation: verify your implementation matches:
+	•	~23 trades / 90 days
+	•	~95.7% win rate
+	•	~$3,200 total PnL (baseline risk settings)
+	•	Max drawdown ~ $375
+
+If your numbers are significantly off:
+	•	Investigate especially:
+	•	Renko brick size,
+	•	Confluence inputs (Daily+4H vs 4H only),
+	•	Exit logic(s).
+
+7.2 COVID & Ultra-Low Vol
+
+These are regression checks only:
+	•	We do not consider them final performance targets.
+	•	The intent is:
+	•	To see that the old logic behaves the same way under stress,
+	•	And then to improve those regimes with the HighVol and UltraLowVol strategies later.
+
+⸻
+
+8. Explicit Confirmation Request
+
+Please confirm back:
+	1.	Confluence Input Question
+	•	Are you currently using only 4H, or Daily + 4H in your ConfluenceEngine or equivalent?
+	•	If 4H-only, please update confluence logic to include Daily trend slope as described.
+	2.	Tick vs Bar Question
+	•	In live mode, are Renko bricks being built off tick data or only 1m bar closes?
+	•	The final design requires ticks → 1m bars → Renko, not direct Renko from bar close.
+	3.	Regime Routing Feasibility
+	•	Is your current architecture structured so we can plug in HighVolStrategy and UltraLowVolStrategy as separate modules behind a regime router?
+	•	If not, what refactor is needed to support that?
+
+⸻
+
+This is Option B: instructions and detailed examples, without full code, so you can evolve your existing implementation in a structured way instead of starting from scratch.
