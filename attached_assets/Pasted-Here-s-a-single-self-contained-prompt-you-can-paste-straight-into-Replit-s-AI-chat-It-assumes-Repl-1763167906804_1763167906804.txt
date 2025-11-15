@@ -1,0 +1,607 @@
+Here’s a single, self-contained prompt you can paste straight into Replit’s AI/chat. It assumes Replit knows **nothing** about your system and builds everything from scratch.
+
+---
+
+## 🔧 Replit Prompt: Build “MaxTrader Liquidity Options Engine v4” from Scratch
+
+You are an **expert Python quantitative developer and systems architect**.
+
+Build a complete, well-structured Python project from scratch called:
+
+> **`maxtrader_liquidity_options_v4`**
+
+This system is an **intraday NASDAQ trading research engine** that:
+
+1. Generates **signals** using ICT-style liquidity concepts on **QQQ** (as a proxy for NQ).
+2. Uses **options structures** (calls, puts, debit spreads, butterflies, broken-wing butterflies) for execution.
+3. Uses **no hard stops** on the underlying — *risk is defined by the options payoff only*.
+4. Is initially **backtest-only** using historical minute data, but is architected to later plug into **Polygon (data)** and **Alpaca/IBKR (execution)**.
+
+Assume you know **nothing about any prior system**. Design everything fresh using the detailed spec below.
+
+---
+
+### 1. Tech Stack & Project Layout
+
+Use **Python 3.11+** and these libraries:
+
+* `pandas`
+* `numpy`
+* `matplotlib`
+* `requests` (for future API hooks)
+* `python-dotenv` (optional, for API keys)
+
+Create this structure:
+
+```text
+maxtrader_liquidity_options_v4/
+  ├─ data/
+  │   └─ sample_QQQ_1m.csv
+  ├─ engine/
+  │   ├─ __init__.py
+  │   ├─ data_provider.py
+  │   ├─ sessions_liquidity.py
+  │   ├─ ict_structures.py
+  │   ├─ options_engine.py
+  │   ├─ strategy.py
+  │   ├─ backtest.py
+  ├─ configs/
+  │   └─ settings.yaml
+  ├─ tests/
+  │   ├─ test_sessions_liquidity.py
+  │   ├─ test_ict_structures.py
+  │   ├─ test_options_engine.py
+  │   ├─ test_strategy.py
+  ├─ main_backtest.py
+  ├─ requirements.txt
+  ├─ .env.example
+  └─ README.md
+```
+
+Use **type hints** and **docstrings** everywhere.
+
+Everything must be executable via:
+
+```bash
+python main_backtest.py
+```
+
+---
+
+### 2. Data & Timezone Assumptions
+
+* Underlying = **QQQ**.
+
+* Historical data format (`data/sample_QQQ_1m.csv`):
+
+  * `timestamp` (ISO8601 UTC)
+  * `open`, `high`, `low`, `close`
+  * `volume`
+
+* All intraday logic must use **America/New_York** timezone.
+
+In `engine/data_provider.py`:
+
+1. Implement a simple **CSV provider**:
+
+   ```python
+   class CSVDataProvider:
+       def __init__(self, path: str, symbol: str = "QQQ"):
+           ...
+
+       def load_bars(self) -> pd.DataFrame:
+           """
+           Load OHLCV data, convert timestamps to tz-aware America/New_York,
+           sort by time, and return a clean DataFrame.
+           """
+   ```
+
+2. Define an abstract interface for future live/Polygon providers:
+
+   ```python
+   from abc import ABC, abstractmethod
+
+   class DataProvider(ABC):
+       @abstractmethod
+       def load_bars(self) -> pd.DataFrame:
+           ...
+   ```
+
+Just stub **Polygon/Alpaca** for now with placeholder classes and comments showing where API calls will go later (e.g. using `POLYGON_API_KEY` and `ALPACA_API_KEY` from `.env`).
+
+---
+
+### 3. Session & Liquidity Zones (ICT Basis)
+
+All this logic goes into `engine/sessions_liquidity.py`.
+
+#### 3.1 Session Labels
+
+On a tz-aware QQQ dataframe, create:
+
+* **Asia session**: 18:00 – 03:00 (NY time)
+* **London session**: 03:00 – 09:30 (NY time)
+* **NY session**: 09:30 – 16:00 (NY time)
+
+Implement:
+
+```python
+def label_sessions(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add a 'session' column with values: 'asia', 'london', 'ny', or 'other',
+    based on bar time in America/New_York.
+    """
+```
+
+#### 3.2 Asia & London Highs/Lows
+
+For each **calendar day**, compute:
+
+* Asia session high & low
+* London session high & low
+
+Then forward-fill so that **every bar after those sessions** has:
+
+* `asia_high`, `asia_low`
+* `london_high`, `london_low`
+
+Implement:
+
+```python
+def add_session_highs_lows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    For each day:
+      - Compute Asia high/low within that day's Asia session.
+      - Compute London high/low within that day's London session.
+    Then forward-fill those levels across the rest of the day.
+    """
+```
+
+---
+
+### 4. ICT Structures: Sweeps, Displacement, FVG, MSS, OB
+
+All of this lives in `engine/ict_structures.py`.
+
+#### 4.1 Liquidity Sweeps
+
+A **bullish sweep**:
+
+* Price **wicks below** Asia or London low (`low < session_low`)
+* Then **closes back above** that low (`close > session_low`).
+
+A **bearish sweep**:
+
+* Price **wicks above** Asia or London high (`high > session_high`)
+* Then **closes back below** that high (`close < session_high`).
+
+Implement:
+
+```python
+def detect_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds:
+      - 'sweep_bullish' (bool)
+      - 'sweep_bearish' (bool)
+      - 'sweep_source' in {'asia', 'london', None}
+    """
+```
+
+#### 4.2 Displacement Candles
+
+Use ATR(14) on the same timeframe.
+
+Bullish displacement:
+
+* Candle body size (`abs(close - open)`) > `1.2 * ATR(14)`
+* Close > previous candle high.
+
+Bearish displacement:
+
+* Body > `1.2 * ATR(14)`
+* Close < previous candle low.
+
+Implement:
+
+```python
+def detect_displacement(df: pd.DataFrame, atr_period: int = 14) -> pd.DataFrame:
+    """
+    Adds:
+      - 'displacement_bullish'
+      - 'displacement_bearish'
+    """
+```
+
+#### 4.3 Fair Value Gaps (FVG)
+
+Using 3-candle logic:
+
+* Bullish FVG at index n: `low[n] > high[n-2]`
+* Bearish FVG at index n: `high[n] < low[n-2]`
+
+Implement:
+
+```python
+def detect_fvgs(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds:
+      - 'fvg_bullish'
+      - 'fvg_bearish'
+      - 'fvg_low'
+      - 'fvg_high'
+    """
+```
+
+#### 4.4 Market Structure Shift (MSS / BOS)
+
+Define swing points:
+
+* Swing high at i: `high[i] > high[i-1], high[i-2], high[i+1], high[i+2]`
+* Swing low at i: `low[i] < low[i-1], low[i-2], low[i+1], low[i+2]`
+
+Bullish MSS:
+
+* After bearish/neutral structure, a close **above** the last swing high.
+
+Bearish MSS:
+
+* After bullish/neutral structure, a close **below** the last swing low.
+
+Implement:
+
+```python
+def detect_mss(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds:
+      - 'mss_bullish'
+      - 'mss_bearish'
+    """
+```
+
+#### 4.5 Order Blocks (Confluence)
+
+Order Block = **last opposite candle before displacement**:
+
+* Bullish OB: last bearish candle before a bullish displacement.
+* Bearish OB: last bullish candle before a bearish displacement.
+
+Store:
+
+* `ob_bullish`, `ob_bearish` (bool)
+* `ob_low`, `ob_high` (zone).
+
+Implement:
+
+```python
+def detect_order_blocks(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    On each displacement event, find the last opposite-color candle
+    before the displacement and mark its full range as OB.
+    """
+```
+
+---
+
+### 5. NY Open Window & Valid Signal Conditions
+
+In `engine/strategy.py`, define a **signal layer**.
+
+#### 5.1 NY Trading Window
+
+We only consider trades in:
+
+* **09:30 – 11:00 America/New_York**
+
+Add helper:
+
+```python
+def in_ny_open_window(ts: pd.Timestamp) -> bool:
+    ...
+```
+
+#### 5.2 Signal Definition
+
+A **LONG signal** requires:
+
+1. Time in NY window (09:30–11:00).
+2. A **bullish sweep** of **Asia OR London low**.
+3. A **bullish displacement** candle after the sweep.
+4. A **bullish FVG** created by that displacement sequence.
+5. **Bullish MSS** (price breaking prior swing high).
+6. (Optional but preferred) Price interacts with a **bullish OB** zone.
+
+A **SHORT signal** is the mirror (sweep of high, bearish displacement, bearish FVG, bearish MSS, OB confluence).
+
+Define a `Signal` dataclass:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Signal:
+    index: int
+    timestamp: pd.Timestamp
+    direction: str  # 'long' or 'short'
+    spot: float
+    target: float
+    source_session: str | None   # 'asia', 'london', or None
+    meta: dict
+```
+
+Target:
+
+* For long: nearest prior swing high / liquidity zone above.
+* For short: nearest prior swing low / liquidity zone below.
+
+Implement:
+
+```python
+def generate_signals(df: pd.DataFrame) -> list[Signal]:
+    """
+    Use all ICT features + NY window to generate a list of Signal objects.
+    """
+```
+
+---
+
+### 6. Options Engine (No Hard Stops; Risk via Structure Only)
+
+All options logic goes into `engine/options_engine.py`.
+
+#### 6.1 Basic Data Structures
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Option:
+    kind: str           # 'call' or 'put'
+    strike: float
+    expiry: pd.Timestamp
+    is_long: bool
+    quantity: int
+    premium: float      # entry premium per contract
+
+@dataclass
+class OptionPosition:
+    options: list[Option]
+    direction: str       # 'long' or 'short' underlying bias
+    entry_time: pd.Timestamp
+    exit_time: pd.Timestamp | None
+    entry_cost: float    # net debit (positive)
+    target: float | None
+```
+
+For now, we **simulate** fair premiums with a very simple model (you can use a rough intrinsic + time value approximation). Precision isn’t critical at this stage; structure logic is.
+
+#### 6.2 Strike Selection Rule (User Preference)
+
+We must support **flies & broken-wing flies** with:
+
+* One wing **1–2 strikes from ATM**.
+* **Body at target** (nearest strike).
+* Other wing further OTM.
+
+Implement helper:
+
+```python
+def choose_fly_strikes(direction: str, spot: float, target: float, strikes: list[float]) -> tuple[float, float, float]:
+    """
+    Returns (lower_strike, body_strike, upper_strike) for fly/broken-wing fly:
+      - one wing ~1–2 strikes from ATM
+      - body near target
+      - other wing further out.
+    """
+```
+
+#### 6.3 Build Option Structures
+
+Implement at least these builders:
+
+```python
+def build_long_option(direction: str, spot: float, strikes: list[float], expiry: pd.Timestamp) -> OptionPosition:
+    """
+    Long call (bullish) or long put (bearish) near ATM.
+    """
+
+def build_debit_spread(direction: str, spot: float, target: float, strikes: list[float], expiry: pd.Timestamp) -> OptionPosition:
+    """
+    For bullish: long call near ATM, short call closer to target.
+    For bearish: long put near ATM, short put closer to target.
+    """
+
+def build_fly(direction: str, spot: float, target: float, strikes: list[float], expiry: pd.Timestamp) -> OptionPosition:
+    """
+    Balanced butterfly with:
+      - one wing ~ATM
+      - body at target
+      - opposite wing symmetric distance away.
+    """
+
+def build_broken_wing_fly(direction: str, spot: float, target: float, strikes: list[float], expiry: pd.Timestamp) -> OptionPosition:
+    """
+    Broken-wing butterfly using the same body/wing rule but with asymmetric risk/reward:
+      - adjust one wing farther to reduce cost or shape payoff.
+    """
+```
+
+Assume we have a list of available strikes (e.g., round spot to nearest 1 or 0.5 increments and build a list around it).
+
+#### 6.4 Structure Selection (“Best Option”)
+
+Implement:
+
+```python
+def select_best_structure(
+    direction: str,
+    spot: float,
+    target: float,
+    strikes: list[float],
+    expiry: pd.Timestamp,
+    mode: str = "auto"
+) -> OptionPosition:
+    """
+    Build:
+      - long option
+      - debit spread
+      - fly
+      - broken-wing fly
+
+    Evaluate each by:
+      - max loss (net debit)
+      - max payoff near target
+      - basic R:R (payoff / max loss)
+    Then pick the best structure under 'auto':
+      - prefer broken-wing fly if target is not too far and R:R is attractive,
+      - else debit spread,
+      - else simple long option.
+    """
+```
+
+No need for a perfect options pricing model; you can approximate.
+
+#### 6.5 No Stops: Exit Logic
+
+There are **no hard stops** on the underlying.
+
+Options exit rules:
+
+* **Primary exit**: If underlying price touches or crosses the **target** level, close the option structure at that bar.
+* **Fallback exit**: If the target is never reached, close at:
+
+  * End-of-day (16:00), or
+  * A fixed number of bars after entry (e.g., 30–60 minutes).
+
+Implement:
+
+```python
+def simulate_option_pnl_over_path(
+    position: OptionPosition,
+    price_path: pd.Series
+) -> float:
+    """
+    Simulate PnL from entry_time forward:
+      - if target hit -> exit at that bar
+      - else exit at last bar in path
+    Use a simple payoff approximation for each option leg.
+    Return total PnL for the structure.
+    """
+```
+
+Risk is strictly capped by `entry_cost` (net debit); no stop-loss logic on the underlying.
+
+---
+
+### 7. Strategy ↔ Options Integration
+
+In `engine/strategy.py`, once you have `Signal` objects:
+
+For each signal:
+
+1. Determine:
+
+   * `direction` (`'long'` or `'short'`)
+   * current **spot** price (QQQ close at signal bar)
+   * **target** from the signal
+
+2. Generate a list of **candidate strikes** around spot (e.g., ±10 strikes).
+
+3. Choose an expiry:
+
+   * For now, simulate as “next weekly expiry with ≥ 3 days to expiry” (you can hardcode a placeholder expiry date relative to signal day).
+
+4. Call:
+
+   ```python
+   position = select_best_structure(direction, spot, target, strikes, expiry)
+   ```
+
+5. Store this `OptionPosition` for backtesting.
+
+---
+
+### 8. Backtester (Options-Level PnL)
+
+In `engine/backtest.py`:
+
+* Build a simple **backtest loop**:
+
+  1. Load bars.
+  2. Add sessions, highs/lows, sweeps, displacement, FVG, MSS, OB.
+  3. Generate signals.
+  4. For each signal, create an `OptionPosition`.
+  5. For each position, extract the future segment of the underlying price (from entry time to EOD) and call `simulate_option_pnl_over_path`.
+  6. Aggregate results.
+
+* Compute:
+
+  * Number of trades
+  * Win rate (% positive PnL)
+  * Average PnL per trade
+  * Average PnL in terms of R (P&L / entry_cost)
+  * Max drawdown of cumulative PnL
+  * Equity curve (list of cumulative PnL values)
+
+---
+
+### 9. main_backtest.py
+
+This script should:
+
+1. Load `sample_QQQ_1m.csv` via `CSVDataProvider`.
+
+2. Apply all transformations and detectors in the correct order:
+
+   * `label_sessions`
+   * `add_session_highs_lows`
+   * `detect_liquidity_sweeps`
+   * `detect_displacement`
+   * `detect_fvgs`
+   * `detect_mss`
+   * `detect_order_blocks`
+
+3. Generate signals.
+
+4. Build options positions and run the backtest.
+
+5. Print a **clear summary** to stdout.
+
+6. Optionally plot:
+
+   * An equity curve.
+   * A sample chart segment showing:
+
+     * Asia/London levels
+     * Sweep and displacement
+     * FVG zone and OB
+     * Entry and target
+
+---
+
+### 10. Tests & README
+
+* In `tests/`, add minimal `pytest` tests for:
+
+  * Session labeling
+  * Sweep detection on synthetic data
+  * FVG detection
+  * MSS detection
+  * Options structure builders returning sane payoff profiles
+
+* In `README.md`, explain:
+
+  * What the engine does (ICT NQ/QQQ liquidity → options execution)
+  * Data assumptions
+  * How to run backtests
+  * How the architecture can later plug into Polygon/Alpaca/IBKR
+
+---
+
+Now implement this entire project step-by-step in Replit.
+Make sure the code runs end-to-end, and that I can run:
+
+```bash
+python main_backtest.py
+```
+
+to see a full summary of the strategy’s performance on the sample QQQ data.
