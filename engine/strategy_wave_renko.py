@@ -276,8 +276,20 @@ def generate_wave_signals(
         
         # LIQUIDITY SWEEP FILTER: Only trade if sweep present (rare, high quality)
         if require_sweep:
-            has_sweep = regime_row.get('sweep', False)
-            if not has_sweep:
+            # Check for sweep at current timestamp in df_1min
+            sweep_mask = df_1min['timestamp'] == timestamp
+            if sweep_mask.any():
+                sweep_row = df_1min[sweep_mask].iloc[-1]
+                has_bullish_sweep = sweep_row.get('sweep_bullish', False)
+                has_bearish_sweep = sweep_row.get('sweep_bearish', False)
+                
+                # Long signals require bullish sweep, short signals require bearish sweep
+                if signal_direction == 'long' and not has_bullish_sweep:
+                    continue
+                elif signal_direction == 'short' and not has_bearish_sweep:
+                    continue
+            else:
+                # No sweep data available at this timestamp
                 continue
         
         # VOLUME FILTER: Require above-average volume on wave impulse
