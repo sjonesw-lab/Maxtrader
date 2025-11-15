@@ -40,7 +40,7 @@ def main():
     print()
     
     print("Step 1: Loading QQQ data...")
-    data_path = "data/sample_QQQ_1m.csv"
+    data_path = "data/QQQ_1m_real.csv"
     
     if not Path(data_path).exists():
         print(f"ERROR: Data file not found: {data_path}")
