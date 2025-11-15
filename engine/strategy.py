@@ -23,21 +23,28 @@ class Signal:
     meta: dict
 
 
-def in_ny_open_window(ts: pd.Timestamp) -> bool:
+def in_ny_open_window(ts: pd.Timestamp, extended: bool = False) -> bool:
     """
-    Check if timestamp is within NY open trading window (09:30-11:00).
+    Check if timestamp is within NY open trading window.
+    
+    Standard: 09:30-11:00
+    Extended: 09:30-12:00
     
     Args:
         ts: Timestamp to check (must be tz-aware America/New_York)
+        extended: If True, use 09:30-12:00 window (Config D)
         
     Returns:
         True if in window, False otherwise
     """
     hour = ts.hour
     minute = ts.minute
-    time_decimal = hour + minute / 60.0
     
-    return (time_decimal >= 9.5) and (time_decimal < 11.0)
+    if extended:
+        return (hour == 9 and minute >= 30) or (hour >= 10 and hour < 12)
+    else:
+        time_decimal = hour + minute / 60.0
+        return (time_decimal >= 9.5) and (time_decimal < 11.0)
 
 
 def find_target(
@@ -201,6 +208,122 @@ def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False, enable_re
                         'mss': 'bearish',
                         'ob': row['ob_bearish'],
                         'regime': row.get('regime', 'unknown')
+                    }
+                )
+                signals.append(signal)
+    
+    return signals
+
+
+def generate_signals_relaxed(
+    df: pd.DataFrame, 
+    require_fvg: bool = False,
+    displacement_threshold: float = 1.0,
+    extended_window: bool = True,
+    enable_regime_filter: bool = True
+) -> List[Signal]:
+    """
+    CONFIG D: Relaxed signal generation for increased frequency.
+    
+    Changes from strict:
+    - FVG is optional (require_fvg=False by default)
+    - Lower displacement threshold (1.0x ATR vs 1.2x)
+    - Extended NY window (09:30-12:00 vs 09:30-11:00)
+    - Regime filter still enabled by default
+    
+    LONG signal requires:
+    1. Time in NY window (09:30-12:00 if extended)
+    2. Bullish sweep
+    3. Bullish displacement (1.0x ATR threshold)
+    4. Bullish MSS
+    5. (Optional) Regime filter: bull_trend or sideways
+    
+    Args:
+        df: DataFrame with all ICT features
+        require_fvg: Require FVG confluence (default: False for Config D)
+        displacement_threshold: ATR multiplier for displacement (default: 1.0)
+        extended_window: Use 09:30-12:00 window (default: True)
+        enable_regime_filter: Filter by regime (default: True)
+        
+    Returns:
+        List of Signal objects
+    """
+    signals = []
+    
+    for idx in df.index:
+        row = df.loc[idx]
+        
+        if not in_ny_open_window(row['timestamp'], extended=extended_window):
+            continue
+        
+        bullish_setup = (
+            row['sweep_bullish'] and
+            row['displacement_bullish'] and
+            row['mss_bullish']
+        )
+        
+        if require_fvg:
+            bullish_setup = bullish_setup and row['fvg_bullish']
+        
+        if enable_regime_filter and 'regime' in df.columns:
+            regime = row['regime']
+            bullish_setup = bullish_setup and regime in ['bull_trend', 'sideways']
+        
+        if bullish_setup:
+            target = find_target(df, idx, 'long')
+            
+            if target is not None:
+                signal = Signal(
+                    index=idx,
+                    timestamp=row['timestamp'],
+                    direction='long',
+                    spot=row['close'],
+                    target=target,
+                    source_session=row['sweep_source'],
+                    meta={
+                        'config': 'relaxed',
+                        'sweep': 'bullish',
+                        'displacement': 'bullish',
+                        'fvg': row['fvg_bullish'],
+                        'mss': 'bullish',
+                        'regime': row.get('regime', 'unknown'),
+                        'displacement_threshold': displacement_threshold
+                    }
+                )
+                signals.append(signal)
+        
+        bearish_setup = (
+            row['sweep_bearish'] and
+            row['displacement_bearish'] and
+            row['mss_bearish']
+        )
+        
+        if require_fvg:
+            bearish_setup = bearish_setup and row['fvg_bearish']
+        
+        if enable_regime_filter and 'regime' in df.columns:
+            regime = row['regime']
+            bearish_setup = bearish_setup and regime in ['bear_trend', 'sideways']
+        
+        if bearish_setup:
+            target = find_target(df, idx, 'short')
+            
+            if target is not None:
+                signal = Signal(
+                    index=idx,
+                    timestamp=row['timestamp'],
+                    direction='short',
+                    spot=row['close'],
+                    target=target,
+                    source_session=row['sweep_source'],
+                    meta={
+                        'config': 'relaxed',
+                        'sweep': 'bearish',
+                        'displacement': 'bearish',
+                        'fvg': row['fvg_bearish'],
+                        'mss': 'bearish',
+                        'regime': row.get('regime', 'unknown'),
+                        'displacement_threshold': displacement_threshold
                     }
                 )
                 signals.append(signal)

@@ -26,7 +26,7 @@ from engine.ict_structures import (
 )
 from engine.renko import build_renko, get_renko_direction_series
 from engine.regimes import detect_regime, get_regime_stats
-from engine.strategy import generate_signals
+from engine.strategy import generate_signals_relaxed
 from engine.backtest import Backtest
 
 
@@ -79,8 +79,8 @@ def main():
     print("  - Liquidity sweeps...")
     df = detect_liquidity_sweeps(df)
     
-    print("  - Displacement candles (ATR-based)...")
-    df = detect_displacement(df, atr_period=14)
+    print("  - Displacement candles (ATR-based, 1.0x threshold for Config D)...")
+    df = detect_displacement(df, atr_period=14, threshold=1.0)
     
     print("  - Fair Value Gaps (FVG)...")
     df = detect_fvgs(df)
@@ -94,8 +94,14 @@ def main():
     print(f"  ✓ All ICT structures detected")
     print()
     
-    print("Step 6: Generating signals (NY window: 09:30-11:00 + regime filter)...")
-    signals = generate_signals(df, enable_ob_filter=False, enable_regime_filter=True)
+    print("Step 6: Generating signals (Config D: relaxed, NY window: 09:30-12:00)...")
+    signals = generate_signals_relaxed(
+        df,
+        require_fvg=False,
+        displacement_threshold=1.0,
+        extended_window=True,
+        enable_regime_filter=True
+    )
     
     print(f"  ✓ Generated {len(signals)} signals")
     

@@ -20,7 +20,7 @@ Preferred communication style: Simple, everyday language.
 
 **Session-Based Liquidity Tracking**: The architecture separates trading time into three global sessions (Asia: 18:00-03:00, London: 03:00-09:30, NY: 09:30-16:00, all in America/New_York timezone). Session highs and lows are tracked and used to identify liquidity zones that may be swept. The system handles midnight boundary crossings for the Asia session to prevent look-ahead bias.
 
-**Signal Generation Window**: All trade signals are generated exclusively during the NY open window (09:30-11:00 ET). This design choice reflects real-world trading constraints and focuses on the highest-volatility period.
+**Signal Generation Window**: Signals are generated during the NY open window. Config D (relaxed) uses an extended window (09:30-12:00 ET) to increase signal frequency while maintaining quality. The standard configuration uses 09:30-11:00 ET.
 
 ### Data Layer
 
@@ -32,7 +32,7 @@ Preferred communication style: Simple, everyday language.
 
 **Liquidity Sweeps**: Detects when price briefly violates a session high/low (creating a wick) but closes back inside, indicating a liquidity grab. Bullish sweeps occur below session lows; bearish sweeps occur above session highs.
 
-**Displacement Candles**: Uses ATR (Average True Range) to identify abnormally large candles that suggest institutional order flow. A displacement candle must exceed 1.5x the recent ATR.
+**Displacement Candles**: Uses ATR (Average True Range) with directional logic to identify abnormally large candles suggesting institutional order flow. Bullish displacement requires close > open with body exceeding threshold * ATR (Config D: 1.0x, Standard: 1.2x). Bearish displacement requires close < open with body exceeding same threshold.
 
 **Fair Value Gaps (FVG)**: Identifies price gaps where candle N+2's low is above candle N's high (bullish FVG) or candle N+2's high is below candle N's low (bearish FVG), suggesting inefficient price discovery.
 
@@ -77,17 +77,13 @@ The system chooses the structure with the best risk-reward ratio while respectin
 
 ### Strategy Layer
 
-**Signal Confluence**: Requires multiple ICT structures to align before generating a signal:
-- Liquidity sweep in one direction
-- Displacement candle confirming the move
-- Fair Value Gap supporting the direction
-- Market structure shift confirming trend change
-- Optional: Order block zone interaction
-- Optional: Regime filter (enabled by default) - long signals in bull/sideways, short signals in bear/sideways
+**Signal Confluence**: Requires multiple ICT structures to align. Two configurations available:
+- **Config D (Relaxed)**: Sweep + Displacement (1.0x ATR) + MSS + Regime filter. Extended window (09:30-12:00). FVG optional. Delivers 11.3 signals/month with 67.6% win rate.
+- **Standard (Strict)**: Sweep + Displacement (1.2x ATR) + FVG + MSS + Regime filter. Standard window (09:30-11:00). Higher confidence, fewer signals.
 
 **Target Calculation**: Dynamically finds targets based on recent swing highs (for longs) or swing lows (for shorts) within a configurable lookback window.
 
-**Direction Logic**: Long signals require bullish sweeps + bullish displacement + bullish FVG + bullish MSS. Short signals require bearish sweeps + bearish displacement + bearish FVG + bearish MSS.
+**Direction Logic**: Config D (Relaxed): Long signals require bullish sweep + bullish displacement + bullish MSS in bull_trend/sideways regime. Short signals require bearish sweep + bearish displacement + bearish MSS in bear_trend/sideways regime. FVG is optional.
 
 ### Walk-Forward Optimizer
 
@@ -111,9 +107,9 @@ The system chooses the structure with the best risk-reward ratio while respectin
 
 ### Testing Strategy
 
-**Unit Tests**: Each module has dedicated tests covering core functionality (session labeling, structure detection, Renko building, regime detection, options calculations, signal logic). Current test count: 24 passing tests.
+**Unit Tests**: Each module has dedicated tests covering core functionality (session labeling, structure detection, Renko building, regime detection, options calculations, signal logic, directional displacement). Current test count: 35 passing tests.
 
-**Regression Tests**: Specific test for Asia session midnight boundary handling to prevent look-ahead bias bugs.
+**Regression Tests**: Asia session midnight boundary handling, directional displacement logic (4 tests ensuring bullish/bearish signals require correct candle direction and are mutually exclusive).
 
 **Fixtures**: Uses simple DataFrame fixtures with known values to verify calculations produce expected outputs.
 
@@ -141,12 +137,12 @@ The system chooses the structure with the best risk-reward ratio while respectin
 
 ### Future Integrations (Architected For)
 
-**Polygon.io API**: Real-time and historical market data provider. The abstract DataProvider interface allows drop-in replacement of CSVDataProvider with PolygonDataProvider.
+**Polygon.io API**: Real-time and historical market data provider. Implemented via WebSocket streaming (engine/polygon_stream.py) for 1-minute bar delivery. Free tier provides 15-min delayed data suitable for paper trading.
 
-**Alpaca/Interactive Brokers**: Execution platforms for live options trading. The current options engine provides the structure definitions needed for order submission.
+**Alpaca API**: Paper trading execution platform (engine/alpaca_execution.py) for options orders. Level 3 options access by default in paper accounts. Live trading runner (live_trading_main.py) combines Polygon data stream with ICT signal generation and Alpaca execution.
 
 ### Data Sources
 
-**QQQ 1-Minute Bars**: Primary trading instrument (NASDAQ-100 ETF) used as proxy for NQ futures. Currently sourced from CSV files; production system would connect to live data feeds.
+**QQQ 1-Minute Bars**: Primary trading instrument (NASDAQ-100 ETF). Real market data via Polygon.io API (90 days, 48,665 bars). Live streaming via WebSocket for paper trading deployment.
 
 **Options Chain Data**: Currently estimated using simplified Black-Scholes model. Production system would require real options chain data from broker APIs for accurate pricing.

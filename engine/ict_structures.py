@@ -86,21 +86,24 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return atr_result
 
 
-def detect_displacement(df: pd.DataFrame, atr_period: int = 14) -> pd.DataFrame:
+def detect_displacement(df: pd.DataFrame, atr_period: int = 14, threshold: float = 1.2) -> pd.DataFrame:
     """
-    Detect displacement candles using ATR.
+    Detect displacement candles using ATR with directional logic.
     
     Bullish displacement:
-    - Candle body size (abs(close - open)) > 1.2 * ATR(14)
+    - Close > Open (bullish candle)
+    - Candle body (close - open) > threshold * ATR
     - Close > previous candle high
     
     Bearish displacement:
-    - Body > 1.2 * ATR(14)
+    - Close < Open (bearish candle)
+    - Candle body (open - close) > threshold * ATR
     - Close < previous candle low
     
     Args:
         df: DataFrame with OHLC data
         atr_period: ATR period (default: 14)
+        threshold: ATR multiplier for displacement (default: 1.2)
         
     Returns:
         pd.DataFrame: DataFrame with added columns:
@@ -112,21 +115,22 @@ def detect_displacement(df: pd.DataFrame, atr_period: int = 14) -> pd.DataFrame:
     
     df['atr'] = calculate_atr(df, period=atr_period)
     
-    df['body_size'] = abs(df['close'] - df['open'])
     df['prev_high'] = df['high'].shift(1)
     df['prev_low'] = df['low'].shift(1)
     
     df['displacement_bullish'] = (
-        (df['body_size'] > 1.2 * df['atr']) &
+        (df['close'] > df['open']) &
+        ((df['close'] - df['open']) > threshold * df['atr']) &
         (df['close'] > df['prev_high'])
     )
     
     df['displacement_bearish'] = (
-        (df['body_size'] > 1.2 * df['atr']) &
+        (df['close'] < df['open']) &
+        ((df['open'] - df['close']) > threshold * df['atr']) &
         (df['close'] < df['prev_low'])
     )
     
-    df = df.drop(['body_size', 'prev_high', 'prev_low'], axis=1)
+    df = df.drop(['prev_high', 'prev_low'], axis=1)
     
     return df
 

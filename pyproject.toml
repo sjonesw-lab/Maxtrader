@@ -4,9 +4,11 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "alpaca-py>=0.43.2",
     "matplotlib>=3.10.7",
     "numpy>=2.3.4",
     "pandas>=2.3.3",
+    "polygon-api-client>=1.16.3",
     "pytest>=9.0.1",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.3",
