@@ -203,19 +203,16 @@ def generate_wave_signals(
         
         # TARGET CALCULATION: Dynamic ATR-based, fixed %, or wave-based
         if use_dynamic_targets:
-            # Dynamic targets based on ATR (realistic 0.3-0.5% for 2-hour moves)
-            # Use brick_size as proxy for ATR
-            target_distance = brick_size * 0.5  # Half brick for realistic target
-            stop_distance = brick_size * 0.35  # Tighter stop
-            
+            # Dynamic targets based on realistic 2-hour QQQ moves (0.3-0.5%)
+            # TP1: 0.35%, TP2: 0.5%, Stop: 0.25%
             if signal_direction == 'long':
-                tp1 = current_price + target_distance
-                tp2 = current_price + (target_distance * 1.5)
-                stop = current_price - stop_distance
+                tp1 = current_price * 1.0035  # +0.35%
+                tp2 = current_price * 1.005   # +0.5%
+                stop = current_price * 0.9975  # -0.25%
             else:  # short
-                tp1 = current_price - target_distance
-                tp2 = current_price - (target_distance * 1.5)
-                stop = current_price + stop_distance
+                tp1 = current_price * 0.9965  # -0.35%
+                tp2 = current_price * 0.995   # -0.5%
+                stop = current_price * 1.0025  # +0.25%
         elif target_mode == 'fixed_pct':
             # Fixed % targets (v3 proven approach)
             # TP1: +1%, TP2: +2%, Stop: -0.7%

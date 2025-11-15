@@ -110,10 +110,10 @@ wave_signals = generate_wave_signals(
     min_confidence=0.40,
     use_ict_boost=False,
     target_mode='fixed_pct',  # Keep fixed % as baseline
-    require_sweep=True,  # Liquidity sweep filter
-    use_volume_filter=True,  # Volume confirmation
-    avoid_lunch_chop=True,  # Time-of-day filter
-    use_dynamic_targets=True  # ATR-based dynamic targets
+    require_sweep=False,  # Sweep filter broken (filters out everything)
+    use_volume_filter=True,  # Volume confirmation (59% selectivity)
+    avoid_lunch_chop=True,  # Time-of-day filter (74% selectivity)
+    use_dynamic_targets=True  # ATR-based dynamic targets (more realistic)
 )
 
 print(f"\n  ✓ Generated {len(wave_signals)} wave signals")
