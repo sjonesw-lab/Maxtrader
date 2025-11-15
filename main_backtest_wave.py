@@ -81,19 +81,20 @@ for regime, count in regime_counts.items():
     pct = (count / len(df_1min)) * 100
     print(f"    - {regime}: {pct:.1f}%")
 
-# Step 6: Generate wave-based signals with SWEEP FILTER ONLY
-print("\nStep 6: Generating wave signals with SWEEP filter...")
-print("  Testing: LIQUIDITY SWEEP FILTER (Asia/London levels)")
+# Step 6: Generate wave-based signals with BASELINE settings
+print("\nStep 6: Generating wave signals with BASELINE (+ scaling exits)...")
+print("  Testing: SCALING EXIT STRATEGY")
 print("  Wave filters:")
 print("    - Wave: 3+ brick impulse")
 print("    - Retracement: shallow/healthy only (skip deep >62%)")
 print("    - Entry distance: ≤1.5 bricks from P2")
 print("    - Confluence: daily+4H alignment, min 0.40 confidence")
-print("  NEW Quality filter:")
-print("    - ✓ Liquidity sweeps: Asia/London level sweeps ONLY")
+print("  Exit Strategy:")
+print("    - ✓ 50% at TP1 (+1%)")
+print("    - ✓ 50% trailing stop (0.5% trail)")
 print("  Session: 09:45-15:45 ET")
 print("  Targets: Fixed % (TP1=+1%, TP2=+2%, Stop=-0.7%)")
-print("  Max hold: 120 minutes")
+print("  Max hold: 120 minutes (but trailing may exit earlier)")
 
 wave_signals = generate_wave_signals(
     df_1min=df_1min,
@@ -107,10 +108,10 @@ wave_signals = generate_wave_signals(
     min_confidence=0.40,
     use_ict_boost=False,
     target_mode='fixed_pct',  # Fixed % baseline
-    require_sweep=True,  # SWEEP FILTER ENABLED (fixed)
-    use_volume_filter=False,  # Disable other filters for clean test
-    avoid_lunch_chop=False,  # Disable other filters for clean test
-    use_dynamic_targets=False  # Use fixed % targets
+    require_sweep=False,  # No additional filters
+    use_volume_filter=False,
+    avoid_lunch_chop=False,
+    use_dynamic_targets=False
 )
 
 print(f"\n  ✓ Generated {len(wave_signals)} wave signals")
@@ -179,10 +180,10 @@ if wave_signals:
         pct = (count / len(wave_signals)) * 100
         print(f"    - {structure}: {count} ({pct:.1f}%)")
 
-# Step 7: Run backtest with sweep filter only (120 min hold)
-print("\nStep 7: Running backtest with SWEEP filter only (0DTE options)...")
-backtest = Backtest(df_1min, min_rr_ratio=1.2)
-results = backtest.run(signals, max_bars_held=120)  # 120 min per v3 config
+# Step 7: Run backtest with SCALING EXITS (120 min hold max)
+print("\nStep 7: Running backtest with SCALING EXIT strategy (0DTE options)...")
+backtest = Backtest(df_1min, min_rr_ratio=1.2, use_scaling_exit=True)  # Enable scaling!
+results = backtest.run(signals, max_bars_held=120)  # 120 min max, but trail may exit sooner
 
 # Step 8: Results
 print("\n" + "="*70)

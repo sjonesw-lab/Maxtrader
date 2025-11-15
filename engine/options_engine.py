@@ -554,21 +554,31 @@ def simulate_option_pnl_over_path(
     position: OptionPosition,
     price_path: pd.Series,
     target: Optional[float] = None,
-    stop: Optional[float] = None
+    stop: Optional[float] = None,
+    use_scaling_exit: bool = False,
+    trailing_stop_pct: float = 0.005,
+    entry_spot: Optional[float] = None
 ) -> float:
     """
     Simulate option PnL from entry to exit.
     
-    Exit rules:
+    Exit rules (standard):
     1. If stop hit -> exit at that bar (loss)
     2. If target hit -> exit at that bar (profit)
     3. Else exit at last bar in path (EOD or time limit)
+    
+    Exit rules (scaling):
+    1. If target hit -> exit 50% at target, trail stop on remaining 50%
+    2. Trailing stop moves with price (0.5% default)
+    3. If stop hit before target -> exit 100% at stop
     
     Args:
         position: OptionPosition
         price_path: Series of underlying prices from entry forward
         target: Target price (if None, use position.target)
         stop: Stop loss price (if None, no stop)
+        use_scaling_exit: Enable 50% at target + 50% trailing (default: False)
+        trailing_stop_pct: Trailing stop distance as % (default: 0.5%)
         
     Returns:
         Total PnL
@@ -576,26 +586,98 @@ def simulate_option_pnl_over_path(
     if target is None:
         target = position.target
     
-    exit_price = None
-    
-    for price in price_path:
-        # Check STOP FIRST (exits on loss)
-        if stop is not None and stop > 0:
-            if (position.direction == 'long' and price <= stop) or \
-               (position.direction == 'short' and price >= stop):
-                exit_price = price
-                break
+    if not use_scaling_exit:
+        # Standard exit logic
+        exit_price = None
         
-        # Check TARGET (exits on profit)
-        if target is not None:
-            if (position.direction == 'long' and price >= target) or \
-               (position.direction == 'short' and price <= target):
-                exit_price = price
-                break
+        for price in price_path:
+            # Check STOP FIRST (exits on loss)
+            if stop is not None and stop > 0:
+                if (position.direction == 'long' and price <= stop) or \
+                   (position.direction == 'short' and price >= stop):
+                    exit_price = price
+                    break
+            
+            # Check TARGET (exits on profit)
+            if target is not None:
+                if (position.direction == 'long' and price >= target) or \
+                   (position.direction == 'short' and price <= target):
+                    exit_price = price
+                    break
+        
+        if exit_price is None:
+            exit_price = price_path.iloc[-1] if len(price_path) > 0 else price_path.iloc[0]
+        
+        pnl = calculate_payoff_at_price(position, exit_price)
+        return pnl
     
-    if exit_price is None:
-        exit_price = price_path.iloc[-1] if len(price_path) > 0 else price_path.iloc[0]
-    
-    pnl = calculate_payoff_at_price(position, exit_price)
-    
-    return pnl
+    else:
+        # Scaling exit logic: 50% at target, 50% with trailing stop
+        partial_closed = False
+        pnl_first_half = 0.0
+        pnl_second_half = 0.0
+        
+        # Use entry_spot parameter or first price in path
+        if entry_spot is not None:
+            entry_price = entry_spot
+        else:
+            entry_price = price_path.iloc[0] if len(price_path) > 0 else target
+        
+        best_price = entry_price  # Track best price for trailing
+        trailing_stop = stop if stop and stop > 0 else (entry_price * 0.995 if position.direction == 'long' else entry_price * 1.005)
+        
+        for i, price in enumerate(price_path):
+            # Check initial stop (before target hit)
+            if not partial_closed and stop is not None and stop > 0:
+                if (position.direction == 'long' and price <= stop) or \
+                   (position.direction == 'short' and price >= stop):
+                    # Hit stop before target - exit 100%
+                    pnl = calculate_payoff_at_price(position, price)
+                    return pnl
+            
+            # Check if target hit (exit first 50%)
+            if not partial_closed and target is not None:
+                if (position.direction == 'long' and price >= target) or \
+                   (position.direction == 'short' and price <= target):
+                    # Exit 50% at target
+                    pnl_first_half = calculate_payoff_at_price(position, price) * 0.5
+                    partial_closed = True
+                    best_price = price
+                    # Set initial trailing stop
+                    if position.direction == 'long':
+                        trailing_stop = price * (1 - trailing_stop_pct)
+                    else:
+                        trailing_stop = price * (1 + trailing_stop_pct)
+                    continue
+            
+            # After partial close, manage remaining 50% with trailing stop
+            if partial_closed:
+                # Update best price and trailing stop
+                if position.direction == 'long':
+                    if price > best_price:
+                        best_price = price
+                        trailing_stop = price * (1 - trailing_stop_pct)
+                    # Check trailing stop
+                    if price <= trailing_stop:
+                        pnl_second_half = calculate_payoff_at_price(position, price) * 0.5
+                        return pnl_first_half + pnl_second_half
+                else:  # short
+                    if price < best_price:
+                        best_price = price
+                        trailing_stop = price * (1 + trailing_stop_pct)
+                    # Check trailing stop
+                    if price >= trailing_stop:
+                        pnl_second_half = calculate_payoff_at_price(position, price) * 0.5
+                        return pnl_first_half + pnl_second_half
+        
+        # End of path
+        final_price = price_path.iloc[-1] if len(price_path) > 0 else entry_price
+        
+        if partial_closed:
+            # Already exited 50%, close remaining 50%
+            pnl_second_half = calculate_payoff_at_price(position, final_price) * 0.5
+            return pnl_first_half + pnl_second_half
+        else:
+            # Never hit target, exit 100% at final price
+            pnl = calculate_payoff_at_price(position, final_price)
+            return pnl

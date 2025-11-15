@@ -34,16 +34,18 @@ class TradeResult:
 class Backtest:
     """Backtest engine for options strategies."""
     
-    def __init__(self, df: pd.DataFrame, min_rr_ratio: float = 1.6):
+    def __init__(self, df: pd.DataFrame, min_rr_ratio: float = 1.6, use_scaling_exit: bool = False):
         """
         Initialize backtest.
         
         Args:
             df: Full market data DataFrame
             min_rr_ratio: Minimum reward-to-risk ratio threshold (default: 1.6)
+            use_scaling_exit: Enable 50% at TP1 + 50% trailing stop (default: False)
         """
         self.df = df
         self.min_rr_ratio = min_rr_ratio
+        self.use_scaling_exit = use_scaling_exit
         self.trades: List[TradeResult] = []
         
     def run(self, signals: List[Signal], max_bars_held: int = 60) -> Dict[str, Any]:
@@ -121,7 +123,15 @@ class Backtest:
         # Get stop loss from signal metadata (if available)
         stop_price = signal.meta.get('stop', None) if hasattr(signal, 'meta') and signal.meta else None
         
-        pnl = simulate_option_pnl_over_path(position, price_path, signal.target, stop=stop_price)
+        pnl = simulate_option_pnl_over_path(
+            position, 
+            price_path, 
+            signal.target, 
+            stop=stop_price,
+            use_scaling_exit=self.use_scaling_exit,
+            trailing_stop_pct=0.005,  # 0.5% trailing stop
+            entry_spot=signal.spot  # Pass entry spot for scaling exit logic
+        )
         
         position.exit_time = future_data['timestamp'].iloc[-1]
         
