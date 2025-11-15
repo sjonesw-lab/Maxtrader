@@ -102,7 +102,7 @@ def find_target(
         return current_price * 0.99
 
 
-def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False) -> List[Signal]:
+def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False, enable_regime_filter: bool = True) -> List[Signal]:
     """
     Generate trading signals using ICT structures within NY window.
     
@@ -113,12 +113,14 @@ def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False) -> List[S
     4. Bullish FVG created by displacement
     5. Bullish MSS (price breaking prior swing high)
     6. (Optional) Price interacts with bullish OB zone
+    7. (Optional) Regime filter: bull_trend or sideways
     
     SHORT signal is the mirror.
     
     Args:
-        df: DataFrame with all ICT features
+        df: DataFrame with all ICT features and regime column
         enable_ob_filter: Require OB confluence (default: False)
+        enable_regime_filter: Filter signals by market regime (default: True)
         
     Returns:
         List of Signal objects
@@ -141,6 +143,10 @@ def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False) -> List[S
         if enable_ob_filter:
             bullish_setup = bullish_setup and row['ob_bullish']
         
+        if enable_regime_filter and 'regime' in df.columns:
+            regime = row['regime']
+            bullish_setup = bullish_setup and regime in ['bull_trend', 'sideways']
+        
         if bullish_setup:
             target = find_target(df, idx, 'long')
             
@@ -157,7 +163,8 @@ def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False) -> List[S
                         'displacement': 'bullish',
                         'fvg': 'bullish',
                         'mss': 'bullish',
-                        'ob': row['ob_bullish']
+                        'ob': row['ob_bullish'],
+                        'regime': row.get('regime', 'unknown')
                     }
                 )
                 signals.append(signal)
@@ -171,6 +178,10 @@ def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False) -> List[S
         
         if enable_ob_filter:
             bearish_setup = bearish_setup and row['ob_bearish']
+        
+        if enable_regime_filter and 'regime' in df.columns:
+            regime = row['regime']
+            bearish_setup = bearish_setup and regime in ['bear_trend', 'sideways']
         
         if bearish_setup:
             target = find_target(df, idx, 'short')
@@ -188,7 +199,8 @@ def generate_signals(df: pd.DataFrame, enable_ob_filter: bool = False) -> List[S
                         'displacement': 'bearish',
                         'fvg': 'bearish',
                         'mss': 'bearish',
-                        'ob': row['ob_bearish']
+                        'ob': row['ob_bearish'],
+                        'regime': row.get('regime', 'unknown')
                     }
                 )
                 signals.append(signal)

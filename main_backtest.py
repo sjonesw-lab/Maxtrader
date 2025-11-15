@@ -24,6 +24,8 @@ from engine.ict_structures import (
     detect_mss,
     detect_order_blocks
 )
+from engine.renko import build_renko, get_renko_direction_series
+from engine.regimes import detect_regime, get_regime_stats
 from engine.strategy import generate_signals
 from engine.backtest import Backtest
 
@@ -52,13 +54,28 @@ def main():
     print(f"  ✓ Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
     print()
     
-    print("Step 2: Labeling sessions (Asia/London/NY)...")
+    print("Step 2: Building Renko chart...")
+    renko_df = build_renko(df, mode="atr", k=1.0)
+    renko_direction = get_renko_direction_series(df, renko_df)
+    print(f"  ✓ Built {len(renko_df)} Renko bricks")
+    print()
+    
+    print("Step 3: Detecting market regime...")
+    df['renko_direction'] = renko_direction
+    df['regime'] = detect_regime(df, renko_direction, lookback=20)
+    regime_stats = get_regime_stats(df)
+    print(f"  ✓ Regime detection complete")
+    for regime, pct in regime_stats['regime_percentages'].items():
+        print(f"    - {regime}: {pct:.1f}%")
+    print()
+    
+    print("Step 4: Labeling sessions (Asia/London/NY)...")
     df = label_sessions(df)
     df = add_session_highs_lows(df)
     print(f"  ✓ Session labels added")
     print()
     
-    print("Step 3: Detecting ICT structures...")
+    print("Step 5: Detecting ICT structures...")
     print("  - Liquidity sweeps...")
     df = detect_liquidity_sweeps(df)
     
@@ -77,8 +94,8 @@ def main():
     print(f"  ✓ All ICT structures detected")
     print()
     
-    print("Step 4: Generating signals (NY window: 09:30-11:00)...")
-    signals = generate_signals(df, enable_ob_filter=False)
+    print("Step 6: Generating signals (NY window: 09:30-11:00 + regime filter)...")
+    signals = generate_signals(df, enable_ob_filter=False, enable_regime_filter=True)
     
     print(f"  ✓ Generated {len(signals)} signals")
     
@@ -87,13 +104,22 @@ def main():
         short_signals = [s for s in signals if s.direction == 'short']
         print(f"    - Long signals: {len(long_signals)}")
         print(f"    - Short signals: {len(short_signals)}")
+        
+        signals_by_regime = {}
+        for signal in signals:
+            regime = signal.meta.get('regime', 'unknown')
+            signals_by_regime[regime] = signals_by_regime.get(regime, 0) + 1
+        
+        print(f"  Signals by regime:")
+        for regime, count in signals_by_regime.items():
+            print(f"    - {regime}: {count}")
     print()
     
     if len(signals) == 0:
         print("No signals generated. Try different data or parameters.")
         return
     
-    print("Step 5: Running options backtest...")
+    print("Step 7: Running options backtest...")
     backtest = Backtest(df, signals)
     results = backtest.run(max_bars_held=60)
     

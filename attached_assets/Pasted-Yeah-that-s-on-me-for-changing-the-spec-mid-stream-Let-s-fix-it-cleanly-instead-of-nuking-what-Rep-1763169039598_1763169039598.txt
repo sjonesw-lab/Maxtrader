@@ -1,0 +1,149 @@
+Yeah, that’s on me for changing the spec mid-stream. Let’s fix it cleanly instead of nuking what Replit is already building.
+
+You **do not** need to throw away the current project. We’ll just **add** the Renko + Regime layer on top of what it’s building now.
+
+---
+
+## 1. What’s happening right now
+
+* Replit is building the **previous prompt**: ICT + options, **without** the Renko/regime combo.
+* That project is still useful. We just need to **upgrade** it.
+
+So the move now is: **send a follow-up instruction** in the *same* Replit project that says “extend what you already built with Renko + regimes and wire them into the strategy.”
+
+---
+
+## 2. Exact follow-up prompt to give Replit now
+
+Copy–paste this into Replit’s AI/chat **inside the same project** it’s already generating:
+
+---
+
+**PROMPT TO REPLIT (FOLLOW-UP / PATCH):**
+
+You already created the `maxtrader_liquidity_options_v4` project with ICT liquidity detection and an options execution layer.
+
+Now **extend and modify** the existing codebase instead of rebuilding from scratch:
+
+### 1. Add Renko Engine
+
+Create `engine/renko.py` with:
+
+* An ATR-based Renko builder:
+
+  * Input: standard OHLCV DataFrame (QQQ 1m).
+  * Parameter: `brick_size_mode` = `"fixed"` or `"atr"`.
+  * For `"atr"`, brick size = `k * ATR(14)` (k configurable).
+  * Output: DataFrame or list with:
+
+    * `timestamp`
+    * `brick_close`
+    * `direction` (`+1` for up, `-1` for down).
+
+Expose:
+
+```python
+def build_renko(df: pd.DataFrame, mode: str = "atr", k: float = 1.0) -> pd.DataFrame:
+    ...
+```
+
+### 2. Add Regime Detection
+
+Create `engine/regimes.py`:
+
+* Use:
+
+  * Renko direction
+  * Rolling ATR
+  * Rolling slope of close prices
+* Classify each bar into:
+
+  * `"bull_trend"`
+  * `"bear_trend"`
+  * `"sideways"`
+
+Expose:
+
+```python
+def detect_regime(df: pd.DataFrame, renko: pd.DataFrame) -> pd.Series:
+    """
+    Returns a pd.Series of regime labels aligned with df.index.
+    """
+```
+
+Implementation suggestion (you decide thresholds):
+
+* If Renko is mostly up over last N bricks and slope > 0 → `bull_trend`
+* If Renko is mostly down and slope < 0 → `bear_trend`
+* Otherwise → `sideways`
+
+### 3. Integrate Renko + Regime into Strategy
+
+Modify `engine/strategy.py`:
+
+* After you build the main OHLCV DataFrame, ICT features, etc., also:
+
+  * Call `build_renko(...)`.
+  * Call `detect_regime(...)` and attach the result to the main DataFrame as `df["regime"]`.
+
+* In `generate_signals(df: pd.DataFrame)`, **filter signals with regime**:
+
+  * For LONG signals:
+
+    * Only allow if `regime` is `"bull_trend"` or `"sideways"`.
+  * For SHORT signals:
+
+    * Only allow if `regime` is `"bear_trend"` or `"sideways"`.
+
+Do **not** change the ICT logic (sweeps, FVG, MSS, OB, NY window) – just add the regime as an additional filter.
+
+### 4. Update Backtest Pipeline
+
+In `engine/backtest.py` and `main_backtest.py`:
+
+* Make sure the pipeline now:
+
+  1. Loads data
+  2. Builds Renko
+  3. Detects regimes
+  4. Adds sessions + Asia/London highs/lows
+  5. Detects sweeps, displacement, FVG, MSS, OB
+  6. Generates signals (respecting regimes)
+  7. Builds options positions
+  8. Simulates PnL
+
+* Print **regime-aware stats**, e.g.:
+
+  * Number of trades per regime
+  * Win rate per regime
+
+### 5. Add Minimal Tests
+
+In `tests/`:
+
+* `test_renko.py`:
+
+  * Confirm `build_renko` returns a non-empty DataFrame for a small synthetic OHLC data set and that directions are ±1.
+* `test_regimes.py`:
+
+  * Build a simple uptrend and downtrend synthetic series.
+  * Verify that `detect_regime` returns mostly `"bull_trend"` for the uptrend and `"bear_trend"` for the downtrend.
+
+Keep everything else you already wrote (ICT + options).
+You are only **extending** the system by adding Renko + regime and using those as an extra filter in the strategy.
+
+---
+
+## 3. If Replit already finished and you want clean separation
+
+If you prefer:
+
+* Treat the current project as **“ICT + options v1”**.
+* Create a **new Replit project** named e.g. `maxtrader_liquidity_options_v4_renko`.
+* Paste the **latest full spec** I gave you as the initial prompt there.
+
+But the simpler, faster path is just the follow-up patch prompt above.
+
+---
+
+If you tell me what files Replit has already generated (just list filenames + a quick glance at `strategy.py`), I can give you an even more surgical “edit these functions like this” patch.
