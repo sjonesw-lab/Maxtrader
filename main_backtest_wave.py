@@ -81,20 +81,21 @@ for regime, count in regime_counts.items():
     pct = (count / len(df_1min)) * 100
     print(f"    - {regime}: {pct:.1f}%")
 
-# Step 6: Generate wave-based signals with BASELINE settings
-print("\nStep 6: Generating wave signals with BASELINE (+ scaling exits)...")
-print("  Testing: SCALING EXIT STRATEGY")
+# Step 6: Generate wave-based signals with SWING-BASED TARGETS
+print("\nStep 6: Generating wave signals with SWING-BASED targets...")
+print("  Testing: 75% SWING RANGE TARGETS + Min 2:1 RR")
 print("  Wave filters:")
 print("    - Wave: 3+ brick impulse")
 print("    - Retracement: shallow/healthy only (skip deep >62%)")
 print("    - Entry distance: ≤1.5 bricks from P2")
 print("    - Confluence: daily+4H alignment, min 0.40 confidence")
-print("  Exit Strategy:")
-print("    - ✓ 50% at TP1 (+1%)")
-print("    - ✓ 50% trailing stop (0.5% trail)")
+print("  Target Strategy:")
+print("    - ✓ TP1: 75% of recent swing range (100 bars)")
+print("    - ✓ TP2: Full swing (swing high/low)")
+print("    - ✓ Quality filter: Min 2:1 risk/reward from entry")
+print("    - ✓ Stop: -0.7%")
 print("  Session: 09:45-15:45 ET")
-print("  Targets: Fixed % (TP1=+1%, TP2=+2%, Stop=-0.7%)")
-print("  Max hold: 120 minutes (but trailing may exit earlier)")
+print("  Max hold: 120 minutes")
 
 wave_signals = generate_wave_signals(
     df_1min=df_1min,
@@ -107,11 +108,12 @@ wave_signals = generate_wave_signals(
     max_entry_distance=1.5,
     min_confidence=0.40,
     use_ict_boost=False,
-    target_mode='fixed_pct',  # Fixed % baseline
-    require_sweep=False,  # No additional filters
+    target_mode='swing_75',  # NEW: Swing-based targets
+    require_sweep=False,
     use_volume_filter=False,
     avoid_lunch_chop=False,
-    use_dynamic_targets=False
+    use_dynamic_targets=False,
+    min_rr_ratio=2.0  # NEW: Minimum 2:1 RR filter
 )
 
 print(f"\n  ✓ Generated {len(wave_signals)} wave signals")
@@ -180,10 +182,10 @@ if wave_signals:
         pct = (count / len(wave_signals)) * 100
         print(f"    - {structure}: {count} ({pct:.1f}%)")
 
-# Step 7: Run backtest with SCALING EXITS (120 min hold max)
-print("\nStep 7: Running backtest with SCALING EXIT strategy (0DTE options)...")
-backtest = Backtest(df_1min, min_rr_ratio=1.2, use_scaling_exit=True)  # Enable scaling!
-results = backtest.run(signals, max_bars_held=120)  # 120 min max, but trail may exit sooner
+# Step 7: Run backtest with SWING TARGETS (120 min hold max)
+print("\nStep 7: Running backtest with SWING-BASED targets (0DTE options)...")
+backtest = Backtest(df_1min, min_rr_ratio=1.2, use_scaling_exit=True)  # Enable scaling exits
+results = backtest.run(signals, max_bars_held=120)  # 120 min max hold
 
 # Step 8: Results
 print("\n" + "="*70)

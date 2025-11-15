@@ -59,7 +59,8 @@ def generate_wave_signals(
     require_sweep: bool = False,
     use_volume_filter: bool = False,
     avoid_lunch_chop: bool = False,
-    use_dynamic_targets: bool = False
+    use_dynamic_targets: bool = False,
+    min_rr_ratio: float = 2.0
 ) -> List[WaveSignal]:
     """
     Generate trading signals using wave analysis with proper retracement detection.
@@ -201,8 +202,50 @@ def generate_wave_signals(
         if not is_aligned:
             continue
         
-        # TARGET CALCULATION: Dynamic ATR-based, fixed %, or wave-based
-        if use_dynamic_targets:
+        # TARGET CALCULATION: Swing-based, dynamic ATR, fixed %, or wave-based
+        if target_mode == 'swing_75':
+            # Swing-based targeting: 75% of recent swing range, min 2:1 RR
+            # Find recent swing high/low (lookback 100 bars)
+            lookback_start = max(0, idx - 100)
+            recent_data = df_1min.iloc[lookback_start:idx]
+            
+            if signal_direction == 'long':
+                swing_high = recent_data['high'].max()
+                swing_low = recent_data['low'].min()
+                swing_range = swing_high - swing_low
+                
+                # Target = swing_low + 75% of range
+                tp1 = swing_low + (swing_range * 0.75)
+                tp2 = swing_high  # Full swing as TP2
+                stop = current_price * 0.993  # -0.7% stop
+                
+                # Check min 2:1 RR
+                potential_gain = tp1 - current_price
+                potential_loss = current_price - stop
+                rr_ratio = potential_gain / potential_loss if potential_loss > 0 else 0
+                
+                if rr_ratio < min_rr_ratio:
+                    continue  # Skip this signal, RR too low
+                    
+            else:  # short
+                swing_high = recent_data['high'].max()
+                swing_low = recent_data['low'].min()
+                swing_range = swing_high - swing_low
+                
+                # Target = swing_high - 75% of range
+                tp1 = swing_high - (swing_range * 0.75)
+                tp2 = swing_low  # Full swing as TP2
+                stop = current_price * 1.007  # +0.7% stop
+                
+                # Check min 2:1 RR
+                potential_gain = current_price - tp1
+                potential_loss = stop - current_price
+                rr_ratio = potential_gain / potential_loss if potential_loss > 0 else 0
+                
+                if rr_ratio < min_rr_ratio:
+                    continue  # Skip this signal, RR too low
+                    
+        elif use_dynamic_targets:
             # Dynamic targets based on realistic 2-hour QQQ moves (0.3-0.5%)
             # TP1: 0.35%, TP2: 0.5%, Stop: 0.25%
             if signal_direction == 'long':
