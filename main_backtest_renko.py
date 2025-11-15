@@ -15,8 +15,8 @@ Expected: 10-20 trades/month, 60-70% win rate, 2-5R avg
 import pandas as pd
 from engine.data_provider import CSVDataProvider
 from engine.sessions_liquidity import label_sessions
-from engine.renko import build_renko
-from engine.regimes import detect_regime, get_renko_direction_series
+from engine.renko import build_renko, get_renko_direction_series
+from engine.regimes import detect_regime
 from engine.strategy_renko import generate_renko_signals, RenkoSignal
 from engine.strategy import Signal  # For compatibility with backtest
 from engine.backtest import Backtest
@@ -28,8 +28,8 @@ print("="*70)
 
 # Step 1: Load data
 print("\nStep 1: Loading QQQ 1-minute data...")
-provider = CSVDataProvider('data/qqq_1min.csv')
-df_1min = provider.load()
+provider = CSVDataProvider('data/QQQ_1m_real.csv')
+df_1min = provider.load_bars()
 print(f"  ✓ Loaded {len(df_1min)} bars")
 print(f"  ✓ Date range: {df_1min['timestamp'].min()} to {df_1min['timestamp'].max()}")
 
@@ -40,7 +40,7 @@ print(f"  ✓ Sessions labeled")
 
 # Step 3: Build Renko chart
 print("\nStep 3: Building Renko chart (price-driven signal generation)...")
-renko_df = build_renko(df_1min, mode="atr", k=1.0, atr_period=14)
+renko_df = build_renko(df_1min, mode="atr", k=4.0, atr_period=14)  # Balanced brick size per architect guidance
 print(f"  ✓ Built {len(renko_df)} Renko bricks from {len(df_1min)} bars")
 print(f"  ✓ Brick-to-bar ratio: {len(df_1min)/len(renko_df):.1f}x compression")
 
@@ -69,14 +69,16 @@ for regime, count in regime_counts.items():
 
 # Step 5: Generate signals on Renko brick formations
 print("\nStep 5: Generating signals from Renko bricks...")
-brick_size = 1.0  # Approximate from ATR
+# Extract actual brick size from Renko dataframe
+brick_size = renko_df['brick_size'].iloc[0]
+print(f"  ✓ Actual brick size: ${brick_size:.2f}")
 
 renko_signals = generate_renko_signals(
     df_1min=df_1min,
     renko_df=renko_df,
     regime_series=df_1min['regime'],
     brick_size=brick_size,
-    min_momentum=0.6,
+    min_momentum=0.8,  # Stricter momentum threshold per architect guidance
     enable_ict_filter=False  # ICT optional, not required
 )
 
@@ -127,9 +129,9 @@ print("\n" + "="*70)
 print("PERFORMANCE SUMMARY")
 print("="*70)
 print(f"Total Trades:        {results['total_trades']}")
-print(f"Win Rate:            {results['win_rate']:.1f}%")
+print(f"Win Rate:            {results['win_rate']*100:.1f}%")
 print(f"Average PnL:         ${results['avg_pnl']:.2f}")
-print(f"Average R-Multiple:  {results['avg_r']:.2f}R")
+print(f"Average R-Multiple:  {results['avg_r_multiple']:.2f}R")
 print(f"Total PnL:           ${results['total_pnl']:.2f}")
 print(f"Max Drawdown:        ${results['max_drawdown']:.2f}")
 

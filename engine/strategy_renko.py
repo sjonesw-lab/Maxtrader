@@ -216,12 +216,30 @@ def generate_renko_signals(
         List of RenkoSignal objects
     """
     signals = []
+    last_signal_time = None
+    min_time_between_signals_minutes = 180  # Prevent signal clustering (target 10-20 trades/month)
     
     for idx in range(len(renko_df)):
         brick = renko_df.iloc[idx]
         timestamp = brick['timestamp']
         
-        # Detect momentum impulse
+        # NY SESSION FILTER: Only trade 9:30 AM - 3:55 PM ET
+        hour = timestamp.hour
+        minute = timestamp.minute
+        time_in_minutes = hour * 60 + minute
+        start_time = 9 * 60 + 30  # 9:30 AM = 570 minutes
+        end_time = 15 * 60 + 55   # 3:55 PM = 955 minutes
+        
+        if not (start_time <= time_in_minutes <= end_time):
+            continue  # Skip signals outside NY trading hours
+        
+        # COOLDOWN FILTER: Prevent signal clustering
+        if last_signal_time is not None:
+            time_since_last = (timestamp - last_signal_time).total_seconds() / 60
+            if time_since_last < min_time_between_signals_minutes:
+                continue
+        
+        # Detect momentum impulse (original 3+ brick logic)
         bullish_impulse, bearish_impulse, momentum_strength = detect_momentum_impulse(
             renko_df, idx, lookback=5, min_consecutive=3
         )
@@ -277,5 +295,6 @@ def generate_renko_signals(
         )
         
         signals.append(signal)
+        last_signal_time = timestamp  # Update cooldown tracker
     
     return signals

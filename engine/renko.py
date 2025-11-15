@@ -55,7 +55,8 @@ def build_renko(
         {
             'timestamp': brick.timestamp,
             'brick_close': brick.brick_close,
-            'direction': brick.direction
+            'direction': brick.direction,
+            'brick_size': brick_size  # Store brick size for target calculation
         }
         for brick in bricks
     ])
