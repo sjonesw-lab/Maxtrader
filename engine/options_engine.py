@@ -37,10 +37,25 @@ class OptionPosition:
     
     def __post_init__(self):
         if self.entry_cost == 0.0:
-            self.entry_cost = sum(
+            # Calculate theoretical premium cost
+            theoretical_cost = sum(
                 opt.premium * opt.quantity * (1 if opt.is_long else -1)
                 for opt in self.options
             )
+            
+            # Add realistic trading costs
+            total_legs = sum(opt.quantity for opt in self.options)
+            commission = 0.65 * total_legs  # $0.65 per contract
+            slippage = 0.05 * total_legs    # ~$0.05 per contract
+            
+            # Bid-ask spread: pay 2% more on buys, receive 2% less on sells
+            bid_ask_cost = sum(
+                abs(opt.premium) * opt.quantity * 0.02
+                for opt in self.options
+            )
+            
+            # Total all-in cost
+            self.entry_cost = abs(theoretical_cost) + commission + slippage + bid_ask_cost
 
 
 def generate_strikes(spot: float, num_strikes: int = 20, increment: float = 1.0) -> List[float]:
