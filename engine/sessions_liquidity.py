@@ -55,13 +55,18 @@ def label_sessions(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_session_highs_lows(df: pd.DataFrame) -> pd.DataFrame:
     """
-    For each day:
+    For each trading day:
       - Compute Asia high/low within that day's Asia session.
       - Compute London high/low within that day's London session.
     Then forward-fill those levels across the rest of the day.
     
-    Note: Asia session spans midnight, so we need to handle day boundaries carefully.
-    We'll associate Asia session with the day it ends (i.e., the trading day).
+    Note: Asia session spans midnight (18:00-03:00), so we define a "trading day"
+    by adding 6 hours to each timestamp before taking the date. This ensures:
+    - Bars from 18:00 day N → trading_day N+1
+    - Bars from 00:00-03:00 day N → trading_day N
+    - The entire Asia session (18:00 N-1 to 03:00 N) groups under trading_day N
+    - London/NY bars on day N see Asia levels from the completed prior session
+    - No look-ahead bias
     
     Args:
         df: DataFrame with 'session' column (from label_sessions)
@@ -73,39 +78,41 @@ def add_session_highs_lows(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     
-    df['date'] = df['timestamp'].dt.date
+    df['trading_day'] = df['timestamp'].apply(
+        lambda ts: (ts + pd.Timedelta(hours=6)).date()
+    )
     
     df['asia_high'] = np.nan
     df['asia_low'] = np.nan
     df['london_high'] = np.nan
     df['london_low'] = np.nan
     
-    for date in df['date'].unique():
-        date_mask = df['date'] == date
+    for trading_day in df['trading_day'].unique():
+        day_mask = df['trading_day'] == trading_day
         
-        asia_mask = date_mask & (df['session'] == 'asia')
+        asia_mask = day_mask & (df['session'] == 'asia')
         if asia_mask.any():
             asia_data = df.loc[asia_mask]
             asia_high = asia_data['high'].max()
             asia_low = asia_data['low'].min()
             
-            df.loc[date_mask, 'asia_high'] = asia_high
-            df.loc[date_mask, 'asia_low'] = asia_low
+            df.loc[day_mask, 'asia_high'] = asia_high
+            df.loc[day_mask, 'asia_low'] = asia_low
         
-        london_mask = date_mask & (df['session'] == 'london')
+        london_mask = day_mask & (df['session'] == 'london')
         if london_mask.any():
             london_data = df.loc[london_mask]
             london_high = london_data['high'].max()
             london_low = london_data['low'].min()
             
-            df.loc[date_mask, 'london_high'] = london_high
-            df.loc[date_mask, 'london_low'] = london_low
+            df.loc[day_mask, 'london_high'] = london_high
+            df.loc[day_mask, 'london_low'] = london_low
     
-    df['asia_high'] = df.groupby('date')['asia_high'].ffill()
-    df['asia_low'] = df.groupby('date')['asia_low'].ffill()
-    df['london_high'] = df.groupby('date')['london_high'].ffill()
-    df['london_low'] = df.groupby('date')['london_low'].ffill()
+    df['asia_high'] = df.groupby('trading_day')['asia_high'].ffill()
+    df['asia_low'] = df.groupby('trading_day')['asia_low'].ffill()
+    df['london_high'] = df.groupby('trading_day')['london_high'].ffill()
+    df['london_low'] = df.groupby('trading_day')['london_low'].ffill()
     
-    df = df.drop('date', axis=1)
+    df = df.drop('trading_day', axis=1)
     
     return df

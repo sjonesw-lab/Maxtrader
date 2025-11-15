@@ -1,0 +1,67 @@
+# MaxTrader Liquidity Options Engine v4
+# Configuration Settings
+
+# Data Settings
+data:
+  symbol: "QQQ"
+  timeframe: "1m"
+  data_source: "csv"  # Options: csv, polygon, alpaca
+  csv_path: "data/sample_QQQ_1m.csv"
+
+# Session Settings (all times in America/New_York)
+sessions:
+  asia:
+    start: "18:00"
+    end: "03:00"
+  london:
+    start: "03:00"
+    end: "09:30"
+  ny:
+    start: "09:30"
+    end: "16:00"
+
+# Trading Window (when to look for signals)
+trading_window:
+  start: "09:30"
+  end: "11:00"
+  timezone: "America/New_York"
+
+# ICT Structure Detection Parameters
+ict:
+  atr_period: 14
+  displacement_multiplier: 1.2
+  fvg_lookback: 3
+  mss_swing_bars: 2
+  ob_lookback: 20
+
+# Signal Generation
+signals:
+  enable_ob_filter: false  # Require Order Block confluence
+  min_target_distance: 0.5  # Minimum % distance to target
+  max_signals_per_day: 5
+
+# Options Configuration
+options:
+  default_expiry_days: 7
+  strike_increment: 1.0
+  num_strikes: 20
+  structure_selection_mode: "auto"  # Options: auto, long, spread, fly, bwfly
+  
+# Risk Management
+risk:
+  max_bars_held: 60  # Maximum minutes to hold position
+  eod_exit_time: "16:00"  # Force exit at end of day
+  max_position_cost: 500  # Maximum $ risk per position
+
+# Backtest Settings
+backtest:
+  enable_slippage: false
+  commission_per_contract: 0.65
+  enable_charts: true
+  chart_output_dir: "."
+
+# Logging
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  save_trades: true
+  trade_log_path: "trades.csv"
