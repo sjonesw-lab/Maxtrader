@@ -87,7 +87,19 @@ The system chooses the structure with the best risk-reward ratio while respectin
 
 **Target Calculation**: Dynamically finds targets based on recent swing highs (for longs) or swing lows (for shorts) within a configurable lookback window.
 
-**Direction Logic**: Long signals require bullish sweeps + bullish displacement + bullish FVG. Short signals require bearish sweeps + bearish displacement + bearish FVG.
+**Direction Logic**: Long signals require bullish sweeps + bullish displacement + bullish FVG + bullish MSS. Short signals require bearish sweeps + bearish displacement + bearish FVG + bearish MSS.
+
+### Walk-Forward Optimizer
+
+**Regime-Adaptive Parameter Tuning**: The system continuously learns optimal parameters for each market regime through walk-forward optimization. Parameters like Renko brick size (k), regime lookback period, exit timing, and filter settings are optimized separately for bull_trend, bear_trend, and sideways conditions.
+
+**Walk-Forward Validation**: Splits historical data into sequential segments, trains on segment N, tests on segment N+1. This prevents overfitting and simulates real-world deployment where parameters are periodically reoptimized.
+
+**Scoring Function**: Evaluates parameter sets using a composite score that balances win rate, average R-multiple, maximum drawdown, and trade frequency. Penalizes parameter sets that generate too few trades or excessive drawdown.
+
+**Persistence**: Saves optimized parameters to `configs/strategy_params.json` and full optimization results to `configs/walkforward_results.json`. The strategy automatically loads regime-specific parameters at runtime.
+
+**Continuous Learning**: Designed to be run weekly or monthly with new data via `optimizer_main.py`, allowing the system to adapt to changing market conditions over time.
 
 ### Backtesting Engine
 

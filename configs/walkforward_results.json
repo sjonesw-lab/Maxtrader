@@ -1,0 +1,166 @@
+{
+  "best_params_per_regime": {
+    "bull_trend": {
+      "renko_k": 0.8,
+      "regime_lookback": 15,
+      "atr_period": 14,
+      "max_trades_per_day": 5,
+      "max_net_debit": 500.0,
+      "exit_minutes": 45,
+      "structure_priority": "auto",
+      "enable_ob_filter": false,
+      "enable_regime_filter": true
+    },
+    "bear_trend": {
+      "renko_k": 0.8,
+      "regime_lookback": 15,
+      "atr_period": 14,
+      "max_trades_per_day": 5,
+      "max_net_debit": 500.0,
+      "exit_minutes": 45,
+      "structure_priority": "auto",
+      "enable_ob_filter": false,
+      "enable_regime_filter": true
+    },
+    "sideways": {
+      "renko_k": 0.8,
+      "regime_lookback": 15,
+      "atr_period": 14,
+      "max_trades_per_day": 5,
+      "max_net_debit": 500.0,
+      "exit_minutes": 45,
+      "structure_priority": "auto",
+      "enable_ob_filter": false,
+      "enable_regime_filter": true
+    }
+  },
+  "test_results": [
+    {
+      "score": -1000.0,
+      "win_rate": 0.0,
+      "avg_r": 0.0,
+      "max_drawdown": 0.0,
+      "num_trades": 0,
+      "total_pnl": 0.0,
+      "params": {
+        "renko_k": 0.8,
+        "regime_lookback": 15,
+        "atr_period": 14,
+        "max_trades_per_day": 5,
+        "max_net_debit": 500.0,
+        "exit_minutes": 45,
+        "structure_priority": "auto",
+        "enable_ob_filter": false,
+        "enable_regime_filter": true
+      },
+      "regime": "bull_trend",
+      "split": 0
+    },
+    {
+      "score": -1000.0,
+      "win_rate": 0.0,
+      "avg_r": 0.0,
+      "max_drawdown": 0.0,
+      "num_trades": 0,
+      "total_pnl": 0.0,
+      "params": {
+        "renko_k": 0.8,
+        "regime_lookback": 15,
+        "atr_period": 14,
+        "max_trades_per_day": 5,
+        "max_net_debit": 500.0,
+        "exit_minutes": 45,
+        "structure_priority": "auto",
+        "enable_ob_filter": false,
+        "enable_regime_filter": true
+      },
+      "regime": "bear_trend",
+      "split": 0
+    },
+    {
+      "score": -1000.0,
+      "win_rate": 0.0,
+      "avg_r": 0.0,
+      "max_drawdown": 0.0,
+      "num_trades": 0,
+      "total_pnl": 0.0,
+      "params": {
+        "renko_k": 0.8,
+        "regime_lookback": 15,
+        "atr_period": 14,
+        "max_trades_per_day": 5,
+        "max_net_debit": 500.0,
+        "exit_minutes": 45,
+        "structure_priority": "auto",
+        "enable_ob_filter": false,
+        "enable_regime_filter": true
+      },
+      "regime": "sideways",
+      "split": 0
+    },
+    {
+      "score": -1000.0,
+      "win_rate": 0.0,
+      "avg_r": 0.0,
+      "max_drawdown": 0.0,
+      "num_trades": 0,
+      "total_pnl": 0.0,
+      "params": {
+        "renko_k": 0.8,
+        "regime_lookback": 15,
+        "atr_period": 14,
+        "max_trades_per_day": 5,
+        "max_net_debit": 500.0,
+        "exit_minutes": 45,
+        "structure_priority": "auto",
+        "enable_ob_filter": false,
+        "enable_regime_filter": true
+      },
+      "regime": "bull_trend",
+      "split": 1
+    },
+    {
+      "score": -1000.0,
+      "win_rate": 0.0,
+      "avg_r": 0.0,
+      "max_drawdown": 0.0,
+      "num_trades": 0,
+      "total_pnl": 0.0,
+      "params": {
+        "renko_k": 0.8,
+        "regime_lookback": 15,
+        "atr_period": 14,
+        "max_trades_per_day": 5,
+        "max_net_debit": 500.0,
+        "exit_minutes": 45,
+        "structure_priority": "auto",
+        "enable_ob_filter": false,
+        "enable_regime_filter": true
+      },
+      "regime": "bear_trend",
+      "split": 1
+    },
+    {
+      "score": -1000.0,
+      "win_rate": 0.0,
+      "avg_r": 0.0,
+      "max_drawdown": 0.0,
+      "num_trades": 0,
+      "total_pnl": 0.0,
+      "params": {
+        "renko_k": 0.8,
+        "regime_lookback": 15,
+        "atr_period": 14,
+        "max_trades_per_day": 5,
+        "max_net_debit": 500.0,
+        "exit_minutes": 45,
+        "structure_priority": "auto",
+        "enable_ob_filter": false,
+        "enable_regime_filter": true
+      },
+      "regime": "sideways",
+      "split": 1
+    }
+  ],
+  "n_splits": 2
+}
