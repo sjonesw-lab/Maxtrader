@@ -13,6 +13,19 @@ The wave-based Renko system was tested on three distinct volatility environments
 | **Feb-May 2020** | COVID CRASH (High Vol) | 32 | 40.6% | $21.55 | $690 | $83 |
 | **Dec 2024-Feb 2025** | ULTRA-LOW VOL | 24 | 25.0% | $20.87 | $501 | $56 |
 
+### **Real-World Account Scaling ($25K Account)**
+
+| Period | Risk/Trade | Avg Profit/Trade | Total Profit (90 days) | Max Drawdown | Return on Account |
+|--------|------------|------------------|------------------------|--------------|-------------------|
+| **Aug-Nov 2025** | 2% ($500) | $697 | **$16,040** | $1,870 | **64.2%** |
+| **Aug-Nov 2025** | 5% ($1,250) | $1,743 | **$40,099** | $4,674 | **160.4%** |
+| **COVID 2020** | 2% ($500) | $108 | $3,450 | $415 | 13.8% |
+| **COVID 2020** | 5% ($1,250) | $269 | $8,625 | $1,038 | 34.5% |
+| **Dec 2024** | 2% ($500) | $104 | $2,509 | $279 | 10.0% |
+| **Dec 2024** | 5% ($1,250) | $261 | $6,272 | $698 | 25.1% |
+
+**Note:** Baseline (Aug-Nov 2025) results scale linearly because 95.7% win rate + scaling exits produce consistent profits. COVID and Dec 2024 results show why volatility filters are critical - returns drop 80%+ outside optimal conditions.
+
 ---
 
 ## 🔴 **CRITICAL FINDINGS**
