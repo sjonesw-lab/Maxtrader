@@ -32,6 +32,7 @@ class WaveSignal:
     spot: float
     tp1: float  # First target
     tp2: float  # Extension target
+    stop: float  # Stop loss (for fixed % mode)
     wave_height: float
     retrace_type: str
     retrace_pct: float
@@ -53,7 +54,8 @@ def generate_wave_signals(
     min_confidence: float = 0.40,
     session_start: tuple = (9, 45),
     session_end: tuple = (15, 45),
-    use_ict_boost: bool = True
+    use_ict_boost: bool = True,
+    target_mode: str = 'wave'
 ) -> List[WaveSignal]:
     """
     Generate trading signals using wave analysis with proper retracement detection.
@@ -85,6 +87,8 @@ def generate_wave_signals(
         min_confidence: Minimum confluence confidence (default: 0.40)
         session_start: (hour, minute) for session start (default: 9:45 AM)
         session_end: (hour, minute) for session end (default: 3:45 PM)
+        use_ict_boost: Enable ICT confluence boost (default: True)
+        target_mode: 'wave' for wave-based targets or 'fixed_pct' for % targets (default: 'wave')
         
     Returns:
         List of WaveSignal objects
@@ -177,10 +181,27 @@ def generate_wave_signals(
         if not is_aligned:
             continue
         
+        # TARGET CALCULATION: Wave-based or fixed percentage
+        if target_mode == 'fixed_pct':
+            # Fixed % targets (v3 proven approach)
+            # TP1: +1%, TP2: +2%, Stop: -0.7%
+            if signal_direction == 'long':
+                tp1 = current_price * 1.01  # +1%
+                tp2 = current_price * 1.02  # +2%
+                stop = current_price * 0.993  # -0.7%
+            else:  # short
+                tp1 = current_price * 0.99  # -1%
+                tp2 = current_price * 0.98  # -2%
+                stop = current_price * 1.007  # +0.7%
+        else:
+            # Wave-based targets (v4 approach)
+            tp1, tp2 = wave_tp1, wave_tp2
+            # No stop for wave-based (options premium defines max loss)
+            stop = 0.0
+        
         # ICT BOOST: Calculate ICT confluence and compare targets
         ict_conf = None
         final_conf_score = wave_conf_score
-        tp1, tp2 = wave_tp1, wave_tp2
         
         if use_ict_boost:
             # Calculate ICT structure confluence
@@ -196,15 +217,17 @@ def generate_wave_signals(
             if final_conf_score < min_confidence:
                 continue
             
-            # Calculate ICT-based targets
-            ict_tp1, ict_tp2 = calculate_ict_targets(
-                df_1min, timestamp, signal_direction, current_price, lookback_bars=20
-            )
-            
-            # Combine wave and ICT targets (closer TP1, farther TP2)
-            tp1, tp2 = combine_wave_and_ict_targets(
-                wave_tp1, wave_tp2, ict_tp1, ict_tp2, current_price, signal_direction
-            )
+            # Only use ICT targets if in wave mode
+            if target_mode == 'wave':
+                # Calculate ICT-based targets
+                ict_tp1, ict_tp2 = calculate_ict_targets(
+                    df_1min, timestamp, signal_direction, current_price, lookback_bars=20
+                )
+                
+                # Combine wave and ICT targets (closer TP1, farther TP2)
+                tp1, tp2 = combine_wave_and_ict_targets(
+                    wave_tp1, wave_tp2, ict_tp1, ict_tp2, current_price, signal_direction
+                )
         
         # REGIME FILTER: Get regime at this timestamp
         regime_mask = df_1min['timestamp'] <= timestamp
@@ -228,6 +251,7 @@ def generate_wave_signals(
             spot=brick['brick_close'],
             tp1=tp1,
             tp2=tp2,
+            stop=stop,
             wave_height=active_wave.wave_height,
             retrace_type=retrace.retrace_type,
             retrace_pct=retrace.retrace_pct,
@@ -245,7 +269,8 @@ def generate_wave_signals(
                 'vwap_position': confluence.vwap_position,
                 'vp_position': confluence.vp_position,
                 'wave_tp1': wave_tp1,
-                'wave_tp2': wave_tp2
+                'wave_tp2': wave_tp2,
+                'target_mode': target_mode
             }
         )
         
