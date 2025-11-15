@@ -1,0 +1,340 @@
+Understood — you want **ONE SINGLE MASTER PROMPT** that:
+
+* Includes **everything**
+* Renko + Regime
+* ICT sweep → displacement → FVG → MSS → OB → NY window
+* Options execution (no stops)
+* Walk-forward, regime-aware optimizer
+* Continuous learning pipeline
+* Backtester
+* Config loader
+* Ready for paper trading Monday
+
+And you want this **as one clean prompt** so when Replit finishes building the core, you can paste *one prompt* to build the **entire final system**.
+
+Here it is.
+
+---
+
+# ✅ **THE SINGLE UNIFIED MASTER PROMPT FOR REPLIT**
+
+**Paste this into Replit when the current build finishes.**
+This replaces all prior prompts.
+
+---
+
+# 🔥 **REPLIT MASTER INSTRUCTION: Build the Full MaxTrader Liquidity Options Engine v4**
+
+You are an expert Python quantitative architect.
+Extend the existing project into a full **walk-forward, regime-adaptive, ICT + Renko + Options** trading engine.
+
+Do **not** rebuild from scratch — **extend the existing project**.
+Add the following modules, logic, optimizer, and runtime wiring exactly as specified.
+
+---
+
+# 1️⃣ R E N K O  +  R E G I M E  (ADD THESE MODULES)
+
+## **A. engine/renko.py**
+
+Implement ATR-based Renko:
+
+```python
+def build_renko(df: pd.DataFrame, mode: str = "atr", k: float = 1.0) -> pd.DataFrame:
+    """
+    Build adaptive Renko bricks.
+    mode: 'atr' or 'fixed'
+    ATR-based brick size: k * ATR(14)
+    Output DataFrame: timestamp, brick_close, direction (+1 / -1)
+    """
+```
+
+Renko is a **macro trend filter**.
+
+---
+
+## **B. engine/regimes.py**
+
+Regime classification using:
+
+* Renko direction bias
+* Rolling slope of close
+* ATR expansion/contraction
+
+Return `"bull_trend"`, `"bear_trend"`, `"sideways"`.
+
+```python
+def detect_regime(df: pd.DataFrame, renko_df: pd.DataFrame) -> pd.Series:
+```
+
+Add this regime label to the main DataFrame.
+
+---
+
+# 2️⃣ I C T  M I C R O S T R U C T U R E
+
+*(Attach these to EXISTING ICT detection pipeline)*
+Already built pieces stay the same; ensure the following exist:
+
+* Session labeling (Asia 18:00–03:00, London 03:00–09:30 NY time)
+* Asia/London highs & lows
+* Liquidity sweeps
+* Displacement candles (ATR-based)
+* Fair Value Gaps (3-candle logic)
+* Market Structure Shifts (swing logic)
+* Order Blocks (last opposite candle before displacement)
+* NY window filter (09:30–11:00 only)
+
+Keep all these intact.
+
+---
+
+# 3️⃣ O P T I O N S  E X E C U T I O N  (USE THIS LAYER ONLY)
+
+No stops.
+Risk is the **options structure**.
+
+Add/verify in `engine/options_engine.py`:
+
+### Structures to support:
+
+* Long call / long put
+* Debit spreads
+* Butterflies
+* Broken-wing butterflies
+
+### Placement rule:
+
+* **1st wing: 1–2 strikes from ATM**
+* **Body: at target liquidity level**
+* **3rd wing: further OTM**
+
+Builder functions needed:
+
+* `build_long_option(...)`
+* `build_debit_spread(...)`
+* `build_fly(...)`
+* `build_broken_wing_fly(...)`
+
+### Structure selector:
+
+```python
+def select_best_structure(direction, spot, target, strikes, expiry, mode="auto"):
+    """
+    Prefer: BWF → Fly → Spread → Single option
+    Rank by:
+        - Max loss (net debit)
+        - Max payoff around target
+        - R:R
+        - Smoothness of payoff
+    """
+```
+
+### Exit logic:
+
+* **Exit when target hit OR at end-of-day OR after X minutes**
+* No underlying stops.
+
+---
+
+# 4️⃣ S T R A T E G Y  L O G I C
+
+(Update existing `strategy.py`)
+
+A LONG signal requires:
+
+1. Bullish sweep
+2. Bullish displacement
+3. Bullish FVG
+4. Bullish MSS
+5. Optional OB
+6. **NY open window** (09:30–11:00)
+7. **Regime must be bull_trend or sideways**
+
+SHORT is mirror.
+
+When a signal occurs:
+
+* Identify spot price
+* Identify target liquidity
+* Build option structure via `select_best_structure()`
+* Emit an `OptionPosition` object
+
+---
+
+# 5️⃣ W A L K - F O R W A R D  O P T I M I Z E R
+
+(Add new file: `engine/optimizer.py`)
+
+This makes the system **continually learning**.
+
+## A. StrategyParams dataclass
+
+Include parameters:
+
+```python
+@dataclass
+class StrategyParams:
+    renko_k: float
+    regime_lookback_bricks: int
+    displacement_atr_mult: float
+    mss_swing_lookback: int
+    fvg_strict: bool
+    max_trades_per_day: int
+    min_rr_required: float
+    max_net_debit_risk: float
+    exit_time_minutes: int
+    structure_priority: str
+```
+
+## B. Parameter grid definition:
+
+```python
+def get_param_grid() -> list[StrategyParams]:
+    """
+    Return moderately sized parameter combinations.
+    """
+```
+
+## C. Evaluator:
+
+```python
+def evaluate_params(params: StrategyParams, df: pd.DataFrame) -> dict:
+    """
+    Run backtest with these params, return metrics:
+    - score
+    - win_rate
+    - avg_R
+    - max_drawdown
+    - num_trades
+    """
+```
+
+Scoring rule must penalize drawdown & too-few trades.
+
+---
+
+## D. Walk-Forward Splitting
+
+```python
+def make_walkforward_splits(df: pd.DataFrame, n_splits: int = 4) -> list:
+```
+
+---
+
+## E. Walk-Forward Optimization per Regime
+
+```python
+def walkforward_optimize_by_regime(df, param_grid, n_splits=4) -> dict:
+    """
+    For each split:
+      - train on segment N
+      - optimize per regime
+      - test on segment N+1
+    Aggregate best params for:
+      - bull_trend
+      - bear_trend
+      - sideways
+    """
+```
+
+---
+
+## F. Save & Load
+
+Two config files:
+
+* `configs/strategy_params.json` → used by strategy at paper/live runtime
+* `configs/walkforward_results.json` → full historical optimization records
+
+Implement:
+
+```python
+def save_best_params_per_regime(...)
+def load_best_params_per_regime(...)
+def save_walkforward_results(...)
+```
+
+---
+
+# 6️⃣ optimizer_main.py (ADD THIS FILE)
+
+This script:
+
+* Loads full historical OHLCV
+* Builds all ICT, Renko, regime labels
+* Runs walk-forward optimization
+* Saves best params per regime
+* Prints summary
+
+This is run **weekly or monthly**:
+
+```bash
+python optimizer_main.py
+```
+
+---
+
+# 7️⃣ main_backtest.py (UPDATE)
+
+Modify to:
+
+* Load best params via `load_best_params_per_regime()`
+* Use regime-specific params per bar
+* Run backtest
+* Print full stats
+
+---
+
+# 8️⃣ Paper Trading (FUTURE READY)
+
+Add comments and architecture notes for:
+
+* Polygon live price feed (spot + option chain source)
+* Alpaca/IBKR order execution (option structures)
+
+Do not implement now; simply ensure that:
+
+* The strategy can receive **current bar**
+* Load **best_params_per_regime**
+* Emit **OptionPosition**
+* Log trade decisions
+
+---
+
+# 9️⃣ Tests (EXTEND)
+
+Add/update pytest modules:
+
+* Renko
+* Regime
+* FVG
+* MSS
+* OB
+* Walk-forward optimizer
+* Options builder functions
+* Option payoff simulator
+* Strategy integration
+
+Minimal tests are fine.
+
+---
+
+# 🔚 **END OF MASTER PROMPT**
+
+This is the **one unified, complete specification**.
+It extends the core Replit already built and adds:
+
+* Renko
+* Regime
+* Options execution
+* Walk-forward optimization
+* Continual learning
+* Per-regime parameter selection
+* A ready-to-paper-trade pipeline
+
+Paste this **exact prompt** into Replit once the current build finishes.
+
+---
+
+If you want, I can also prepare a **visual architecture diagram** or **flowchart prompt** for you to feed into GPT-4o to generate images for documentation or investor reports.
