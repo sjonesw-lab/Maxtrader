@@ -1,0 +1,124 @@
+```bash
+cd /root/trading
+
+echo "="*80
+echo "EXTRACTING EXACT BACKTEST SETTINGS FROM PROVEN SYSTEM"
+echo "="*80
+
+echo ""
+echo "1. BACKTEST CONFIGURATION (from runner_v3.py):"
+cd /root/maxtrader_v3_latest/backtest
+
+# Extract __init__ parameters
+echo ""
+echo "=== RUNNER INITIALIZATION ==="
+grep -A 15 "def __init__" runner_v3.py | head -20
+
+echo ""
+echo "=== CONFLUENCE ENGINE SETTINGS ==="
+head -30 /root/maxtrader_v3_latest/exec/confluence.py
+
+echo ""
+echo "=== OPTIONS ALLOCATOR SETTINGS ==="
+cat /root/maxtrader_v3_latest/exec/options_allocator.py
+
+echo ""
+echo "=== RISK MANAGER SETTINGS ==="
+cat /root/maxtrader_v3_latest/exec/risk.py
+
+echo ""
+echo "2. WHAT LIVE SYSTEM IS USING:"
+cd /root/trading
+echo ""
+echo "=== LIVE SYSTEM INITIALIZATION ==="
+grep -A 20 "def __init__" production_observer_with_tracking.py | head -25
+
+echo ""
+echo "="*80
+echo "3. SIDE-BY-SIDE COMPARISON:"
+echo "="*80
+
+cat > show_all_settings.py << 'PYSHOW'
+print("""
+BACKTEST SETTINGS (70%+ win rate):
+=====================================
+
+RISK MANAGER:
+- starting_capital: $100,000
+- risk_per_trade: 2% (0.02)
+- dd_hard: 10% (0.10) - hard stop
+- dd_soft: 6% (0.06) - reduce risk
+- max_positions: 8
+
+OPTIONS ALLOCATOR:
+- ALLOC_DTE_MIN: 5 days (env var, default 5)
+- ALLOC_DTE_MAX: 15 days (env var, default 15)
+- ALLOC_MIN_OI: 2000 contracts (env var, default 2000)
+- ALLOC_MAX_SPREAD_PCT: 1.0% (env var, default 1.0)
+
+CONFLUENCE ENGINE:
+- min_confidence: 0.4 (40%)
+- Uses: daily bars, 4H bars (optional), wyckoff (optional)
+
+POSITION MANAGEMENT:
+- stop: 0.7% from entry (0.993 for long, 1.007 for short)
+- target_1: 1% profit (1.01 for long, 0.99 for short)
+- target_2: 2% profit (1.02 for long, 0.98 for short)
+- max_hold_time: 120 minutes (2 hours)
+- slip_bps: 2.0 basis points
+- commission: $0.00
+
+LIVE SYSTEM CURRENT:
+=====================================
+
+RISK MANAGER:
+- starting_capital: $10,000  ⚠️ DIFFERENT
+- dd_hard: 10% (0.10)  ✅ SAME
+- dd_soft: 6% (0.06)  ✅ SAME
+- max_positions: 8  ✅ SAME
+
+OPTIONS ALLOCATOR:
+- Using defaults (same as backtest)  ✅
+
+CONFLUENCE ENGINE:
+- min_confidence: 0.4 (40%)  ✅ SAME
+- Using: daily bars ONLY  ⚠️ MISSING 4H BARS
+
+POSITION MANAGEMENT:
+- Same targets/stops as backtest  ✅
+- max_hold_time: 120 minutes  ✅
+- NO actual order placement yet  ❌
+
+KEY DIFFERENCES:
+=====================================
+1. Starting capital: $100k → $10k
+2. Missing 4H bars for confluence
+3. No actual order execution (paper only)
+""")
+PYSHOW
+
+python3 show_all_settings.py
+
+echo ""
+echo "="*80
+echo "ENVIRONMENT VARIABLES (if set):"
+echo "="*80
+grep -E "ALLOC_|BT_" .env 2>/dev/null || echo "No allocator/backtest env vars set"
+
+echo ""
+echo "="*80
+echo "WHAT TO FIX:"
+echo "="*80
+echo ""
+echo "1. Add 4H bar fetching (confluence uses both daily + 4H)"
+echo "2. Verify confluence scoring is working"
+echo "3. Add actual order placement"
+echo ""
+echo "Do you want me to:"
+echo "  A) Show you the EXACT confluence.py logic"
+echo "  B) Add 4H bar fetching to live system"
+echo "  C) Test confluence with current market data"
+echo "  D) All of the above"
+```
+
+**This shows EVERY setting from the proven backtest vs what's running live now.**
