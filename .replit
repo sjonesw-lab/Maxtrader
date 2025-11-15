@@ -16,15 +16,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "backtest"
+args = "backtest-renko"
 
 [[workflows.workflow]]
-name = "backtest"
+name = "backtest-renko"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python main_backtest.py"
+args = "python main_backtest_renko.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
