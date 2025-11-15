@@ -34,9 +34,25 @@ ict:
   mss_swing_bars: 2
   ob_lookback: 20
 
+# Renko Chart Configuration
+renko:
+  mode: "atr"  # Options: atr, fixed
+  atr_multiplier: 1.0  # Brick size = ATR * k (for ATR mode)
+  fixed_brick_size: 2.0  # Fixed brick size in $ (for fixed mode)
+  atr_period: 14  # Period for ATR calculation
+
+# Regime Detection
+regime:
+  enable_filter: true  # Apply regime filter to signals
+  lookback: 20  # Bars to look back for trend strength
+  allow_sideways: true  # Allow signals in sideways markets
+  bull_threshold: 0.6  # Renko trend strength for bull classification
+  bear_threshold: -0.6  # Renko trend strength for bear classification
+
 # Signal Generation
 signals:
   enable_ob_filter: false  # Require Order Block confluence
+  enable_regime_filter: true  # Require regime alignment (default: true)
   min_target_distance: 0.5  # Minimum % distance to target
   max_signals_per_day: 5
 

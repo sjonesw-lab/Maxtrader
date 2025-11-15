@@ -40,6 +40,25 @@ Preferred communication style: Simple, everyday language.
 
 **Order Blocks**: Identifies the last opposite-colored candle before a strong move, representing potential institutional accumulation/distribution zones.
 
+### Renko Chart Engine
+
+**ATR-Based Brick Building**: Constructs Renko charts with brick sizes determined by the Average True Range (ATR) of the underlying price data. This adaptive approach ensures brick sizes scale with market volatility. Each brick represents a fixed price movement, filtering out time and small fluctuations to reveal clearer trend information.
+
+**Direction Tracking**: Assigns a direction (+1 for up bricks, -1 for down bricks) to each Renko brick and aligns these directions with the original 1-minute bar timestamps, enabling regime detection on the time series.
+
+**Trend Strength Calculation**: Computes rolling trend strength by analyzing the proportion of consecutive same-direction bricks over a lookback window, providing a smoothed measure of trend momentum.
+
+### Regime Detection
+
+**Market Classification**: Categorizes market conditions into three regimes:
+- **Bull Trend**: Sustained upward Renko trend (trend strength > 0.6) with positive price slope
+- **Bear Trend**: Sustained downward Renko trend (trend strength < -0.6) with negative price slope  
+- **Sideways**: Mixed Renko directions or weak trend strength, indicating consolidation or choppy conditions
+
+**Regime-Based Signal Filtering**: Acts as an additional signal filter layered on top of ICT structure confluence. Long signals are permitted in bull_trend or sideways regimes; short signals in bear_trend or sideways regimes. This prevents counter-trend trades while still allowing range-bound opportunities.
+
+**No Look-Ahead Bias**: Regime classification uses only current and historical Renko data, ensuring no future information leaks into trading decisions.
+
 ### Options Engine
 
 **Strike Generation**: Creates a grid of strikes around the current spot price (default: 20 strikes with $1 increments) to enable precise options structure construction.
@@ -62,7 +81,9 @@ The system chooses the structure with the best risk-reward ratio while respectin
 - Liquidity sweep in one direction
 - Displacement candle confirming the move
 - Fair Value Gap supporting the direction
-- Optional: Market structure shift or order block
+- Market structure shift confirming trend change
+- Optional: Order block zone interaction
+- Optional: Regime filter (enabled by default) - long signals in bull/sideways, short signals in bear/sideways
 
 **Target Calculation**: Dynamically finds targets based on recent swing highs (for longs) or swing lows (for shorts) within a configurable lookback window.
 
@@ -78,11 +99,15 @@ The system chooses the structure with the best risk-reward ratio while respectin
 
 ### Testing Strategy
 
-**Unit Tests**: Each module has dedicated tests covering core functionality (session labeling, structure detection, options calculations, signal logic).
+**Unit Tests**: Each module has dedicated tests covering core functionality (session labeling, structure detection, Renko building, regime detection, options calculations, signal logic). Current test count: 24 passing tests.
 
 **Regression Tests**: Specific test for Asia session midnight boundary handling to prevent look-ahead bias bugs.
 
 **Fixtures**: Uses simple DataFrame fixtures with known values to verify calculations produce expected outputs.
+
+**Renko Tests**: test_renko.py validates ATR/fixed brick building modes, direction alignment, trend strength calculation, and edge cases.
+
+**Regime Tests**: test_regimes.py verifies bull/bear/sideways classification, regime statistics, and signal filtering logic.
 
 ## External Dependencies
 
