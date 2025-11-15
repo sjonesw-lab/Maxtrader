@@ -48,15 +48,22 @@ def generate_wave_signals(
     session_end: tuple = (15, 45)
 ) -> List[WaveSignal]:
     """
-    Generate trading signals using wave analysis and confluence.
+    Generate trading signals using wave analysis with proper retracement detection.
     
-    Quality filters (not time-based):
-    1. Wave impulse: min 3 bricks
-    2. Retracement: shallow or healthy only
-    3. Entry distance: within 1.5 bricks of P2
-    4. Confluence: daily + 4H alignment
-    5. Minimum confidence gate
-    6. Regime alignment
+    State-machine approach:
+    1. Detect completed wave impulses (3+ consecutive bricks)
+    2. Cache completed waves
+    3. Monitor subsequent bricks for retracements
+    4. Signal when price retraces into shallow (0-33%) or healthy (33-62%) zones
+    5. Skip if retracement goes deep (>62%)
+    
+    Quality filters:
+    - Wave impulse: min 3 bricks
+    - Retracement: shallow or healthy only
+    - Entry distance: within 1.5 bricks of P2
+    - Confluence: daily + 4H alignment
+    - Minimum confidence gate
+    - Regime alignment
     
     Args:
         df_1min: 1-minute OHLCV data
@@ -75,6 +82,7 @@ def generate_wave_signals(
         List of WaveSignal objects
     """
     signals = []
+    active_wave = None  # Track the current wave waiting for retracement
     
     for idx in range(min_bricks, len(renko_df)):
         brick = renko_df.iloc[idx]
@@ -90,19 +98,60 @@ def generate_wave_signals(
         if not (start_time <= time_in_minutes <= end_time):
             continue
         
-        # WAVE ANALYSIS: Find valid wave entry setup
-        wave_entry = find_valid_wave_entry(
-            renko_df, idx, brick_size, min_bricks, max_entry_distance
-        )
+        current_price = brick['brick_close']
+        current_direction = brick['direction']
         
-        if wave_entry is None:
+        # STATE 1: Check if we just completed a new wave impulse
+        from engine.wave_analysis import detect_wave
+        potential_wave = detect_wave(renko_df, idx, min_bricks)
+        
+        # If new wave detected and different from active_wave, cache it
+        if potential_wave is not None:
+            # Check if this is a NEW completed wave (not already tracked)
+            if active_wave is None or potential_wave.end_idx > active_wave.end_idx:
+                active_wave = potential_wave
+                # Don't signal yet - wait for retracement
+                continue
+        
+        # STATE 2: If we have an active wave, check for retracement
+        if active_wave is None:
             continue
         
-        wave, retrace, tp1, tp2 = wave_entry
+        # Check if current brick is moving opposite to wave (retracement)
+        is_retracing = (active_wave.direction == 1 and current_direction == -1) or \
+                       (active_wave.direction == -1 and current_direction == 1)
         
-        # Skip deep retracements (already filtered in wave_analysis)
+        # Also check if price has moved away from P2 (continuation, not retracement)
+        if active_wave.direction == 1:  # Up wave
+            if current_price > active_wave.p2_price:
+                # Price continued higher - invalidate wave, look for new one
+                active_wave = None
+                continue
+        else:  # Down wave
+            if current_price < active_wave.p2_price:
+                # Price continued lower - invalidate wave, look for new one
+                active_wave = None
+                continue
+        
+        # Analyze current retracement
+        from engine.wave_analysis import analyze_retracement, calculate_wave_targets
+        retrace = analyze_retracement(active_wave, current_price, brick_size, max_entry_distance)
+        
+        # Skip if retracement is too deep (>62%) - invalidate wave
         if retrace.retrace_type == 'deep':
+            active_wave = None
             continue
+        
+        # Skip if not a valid entry (too far from P2)
+        if not retrace.entry_valid:
+            continue
+        
+        # Only signal on shallow or healthy retracements
+        if retrace.retrace_type not in ['shallow', 'healthy']:
+            continue
+        
+        # Calculate wave targets
+        tp1, tp2 = calculate_wave_targets(active_wave, retrace)
         
         # CONFLUENCE: Calculate multi-timeframe alignment
         confluence = calculate_confluence(
@@ -110,7 +159,7 @@ def generate_wave_signals(
         )
         
         # Determine signal direction from wave
-        signal_direction = 'long' if wave.direction == 1 else 'short'
+        signal_direction = 'long' if active_wave.direction == 1 else 'short'
         
         # Check confluence alignment
         is_aligned, conf_score = check_confluence_alignment(
@@ -142,15 +191,15 @@ def generate_wave_signals(
             spot=brick['brick_close'],
             tp1=tp1,
             tp2=tp2,
-            wave_height=wave.wave_height,
+            wave_height=active_wave.wave_height,
             retrace_type=retrace.retrace_type,
             retrace_pct=retrace.retrace_pct,
             confluence=confluence,
             regime=regime,
             meta={
-                'wave_bricks': wave.brick_count,
-                'p1_price': wave.p1_price,
-                'p2_price': wave.p2_price,
+                'wave_bricks': active_wave.brick_count,
+                'p1_price': active_wave.p1_price,
+                'p2_price': active_wave.p2_price,
                 'confidence': conf_score,
                 'daily_direction': confluence.daily_direction,
                 'vwap_position': confluence.vwap_position,
@@ -159,5 +208,8 @@ def generate_wave_signals(
         )
         
         signals.append(signal)
+        
+        # Clear active wave after signaling (one signal per wave)
+        active_wave = None
     
     return signals

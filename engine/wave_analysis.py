@@ -73,9 +73,19 @@ def detect_wave(
     if brick_count < min_bricks:
         return None
     
-    # Calculate wave metrics
-    p1_price = renko_df.iloc[start_idx]['brick_close']
+    # P1 = actual swing turn price (last opposite-direction brick close, or swing low/high)
+    # This is the brick BEFORE the wave started
+    if start_idx > 0:
+        # Use the brick close BEFORE the wave impulse started
+        p1_price = renko_df.iloc[start_idx - 1]['brick_close']
+    else:
+        # Edge case: wave starts at beginning of data
+        p1_price = renko_df.iloc[start_idx]['brick_close']
+    
+    # P2 = wave end price
     p2_price = renko_df.iloc[end_idx]['brick_close']
+    
+    # Wave height = full impulse from turn to end
     wave_height = abs(p2_price - p1_price)
     timestamp = renko_df.iloc[end_idx]['timestamp']
     
@@ -167,13 +177,10 @@ def calculate_wave_targets(
     Returns:
         (tp1, tp2) target prices
     """
-    # Base multipliers
-    if retrace.retrace_type == 'shallow':
-        tp1_mult = 1.25  # Stronger momentum -> higher initial target
-        tp2_mult = 1.618
-    else:  # healthy
-        tp1_mult = 1.0
-        tp2_mult = 1.618
+    # Base multipliers - use conservative 1.0× for both to improve win rate
+    # (Shallow momentum already captured by earlier entry, no need for aggressive targets)
+    tp1_mult = 1.0
+    tp2_mult = 1.618
     
     # Calculate targets from P2 (wave end)
     if wave.direction == 1:  # Long
