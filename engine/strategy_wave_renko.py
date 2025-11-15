@@ -15,6 +15,12 @@ import numpy as np
 
 from engine.wave_analysis import find_valid_wave_entry, Wave, Retracement
 from engine.confluence import calculate_confluence, check_confluence_alignment, ConfluenceSignal
+from engine.ict_confluence import (
+    calculate_ict_confluence, 
+    calculate_ict_targets,
+    combine_wave_and_ict_targets,
+    ICTConfluence
+)
 
 
 @dataclass
@@ -31,6 +37,7 @@ class WaveSignal:
     retrace_pct: float
     confluence: ConfluenceSignal
     regime: str
+    ict_confluence: Optional[ICTConfluence] = None
     meta: dict = None
 
 
@@ -45,7 +52,8 @@ def generate_wave_signals(
     max_entry_distance: float = 1.5,
     min_confidence: float = 0.40,
     session_start: tuple = (9, 45),
-    session_end: tuple = (15, 45)
+    session_end: tuple = (15, 45),
+    use_ict_boost: bool = True
 ) -> List[WaveSignal]:
     """
     Generate trading signals using wave analysis with proper retracement detection.
@@ -151,7 +159,7 @@ def generate_wave_signals(
             continue
         
         # Calculate wave targets
-        tp1, tp2 = calculate_wave_targets(active_wave, retrace)
+        wave_tp1, wave_tp2 = calculate_wave_targets(active_wave, retrace)
         
         # CONFLUENCE: Calculate multi-timeframe alignment
         confluence = calculate_confluence(
@@ -162,12 +170,41 @@ def generate_wave_signals(
         signal_direction = 'long' if active_wave.direction == 1 else 'short'
         
         # Check confluence alignment
-        is_aligned, conf_score = check_confluence_alignment(
+        is_aligned, wave_conf_score = check_confluence_alignment(
             confluence, signal_direction, min_confidence
         )
         
         if not is_aligned:
             continue
+        
+        # ICT BOOST: Calculate ICT confluence and compare targets
+        ict_conf = None
+        final_conf_score = wave_conf_score
+        tp1, tp2 = wave_tp1, wave_tp2
+        
+        if use_ict_boost:
+            # Calculate ICT structure confluence
+            from engine.ict_confluence import blend_confidence_scores
+            ict_conf = calculate_ict_confluence(
+                df_1min, timestamp, signal_direction, lookback_bars=10
+            )
+            
+            # Blend confidence scores multiplicatively
+            final_conf_score = blend_confidence_scores(wave_conf_score, ict_conf.confluence_score)
+            
+            # Re-check minimum confidence after ICT boost
+            if final_conf_score < min_confidence:
+                continue
+            
+            # Calculate ICT-based targets
+            ict_tp1, ict_tp2 = calculate_ict_targets(
+                df_1min, timestamp, signal_direction, current_price, lookback_bars=20
+            )
+            
+            # Combine wave and ICT targets (closer TP1, farther TP2)
+            tp1, tp2 = combine_wave_and_ict_targets(
+                wave_tp1, wave_tp2, ict_tp1, ict_tp2, current_price, signal_direction
+            )
         
         # REGIME FILTER: Get regime at this timestamp
         regime_mask = df_1min['timestamp'] <= timestamp
@@ -196,14 +233,19 @@ def generate_wave_signals(
             retrace_pct=retrace.retrace_pct,
             confluence=confluence,
             regime=regime,
+            ict_confluence=ict_conf,
             meta={
                 'wave_bricks': active_wave.brick_count,
                 'p1_price': active_wave.p1_price,
                 'p2_price': active_wave.p2_price,
-                'confidence': conf_score,
+                'confidence': final_conf_score,
+                'wave_confidence': wave_conf_score,
+                'ict_confluence_score': ict_conf.confluence_score if ict_conf else 0.0,
                 'daily_direction': confluence.daily_direction,
                 'vwap_position': confluence.vwap_position,
-                'vp_position': confluence.vp_position
+                'vp_position': confluence.vp_position,
+                'wave_tp1': wave_tp1,
+                'wave_tp2': wave_tp2
             }
         )
         

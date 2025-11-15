@@ -11,13 +11,14 @@ Implements successful backtest config:
 
 import pandas as pd
 from engine.data_provider import CSVDataProvider
-from engine.sessions_liquidity import label_sessions
+from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.renko import build_renko, get_renko_direction_series
 from engine.regimes import detect_regime
 from engine.strategy_wave_renko import generate_wave_signals, WaveSignal
 from engine.strategy import Signal  # For backtest compatibility
 from engine.backtest import Backtest
 from engine.timeframes import resample_to_timeframe
+from engine.ict_structures import detect_all_structures
 
 print("="*70)
 print("MaxTrader Wave System: Renko + Multi-TF Confluence + 0DTE")
@@ -37,10 +38,16 @@ df_daily = resample_to_timeframe(df_1min, '1D')
 print(f"  ✓ 4H bars: {len(df_4h)}")
 print(f"  ✓ Daily bars: {len(df_daily)}")
 
-# Step 3: Label sessions
-print("\nStep 3: Labeling sessions...")
+# Step 3: Label sessions and add session high/low levels
+print("\nStep 3: Labeling sessions and computing session levels...")
 df_1min = label_sessions(df_1min)
-print(f"  ✓ Sessions labeled")
+df_1min = add_session_highs_lows(df_1min)
+print(f"  ✓ Sessions labeled and high/low levels computed")
+
+# Step 3.5: Detect ICT structures
+print("\nStep 3.5: Detecting ICT structures...")
+df_1min = detect_all_structures(df_1min, displacement_threshold=1.0)
+print(f"  ✓ ICT structures detected (sweeps, displacement, FVG, MSS, OB)")
 
 # Step 4: Build Renko chart (k=4.0 per tuning)
 print("\nStep 4: Building Renko chart...")
@@ -74,7 +81,7 @@ for regime, count in regime_counts.items():
     pct = (count / len(df_1min)) * 100
     print(f"    - {regime}: {pct:.1f}%")
 
-# Step 6: Generate wave-based signals with confluence
+# Step 6: Generate wave-based signals with multi-TF confluence
 print("\nStep 6: Generating wave signals with multi-TF confluence...")
 print("  Quality filters:")
 print("    - Wave: 3+ brick impulse")
@@ -82,6 +89,7 @@ print("    - Retracement: shallow/healthy only (skip deep >62%)")
 print("    - Entry distance: ≤1.5 bricks from P2")
 print("    - Confluence: daily+4H alignment, min 0.40 confidence")
 print("    - Session: 09:45-15:45 ET")
+print("  Note: ICT boost available but disabled (degrades performance)")
 
 wave_signals = generate_wave_signals(
     df_1min=df_1min,
@@ -92,7 +100,8 @@ wave_signals = generate_wave_signals(
     brick_size=brick_size,
     min_bricks=3,
     max_entry_distance=1.5,
-    min_confidence=0.40
+    min_confidence=0.40,
+    use_ict_boost=False  # ICT boost degrades performance (WR -12pp, PF -2.8)
 )
 
 print(f"\n  ✓ Generated {len(wave_signals)} wave signals")
@@ -137,10 +146,28 @@ for rtype, count in retrace_breakdown.items():
     print(f"    - {rtype}: {count}")
 
 # Confidence stats
-confidences = [ws.meta['confidence'] for ws in wave_signals]
-if confidences:
-    print(f"  Confidence range: {min(confidences):.2f} - {max(confidences):.2f}")
-    print(f"  Mean confidence: {sum(confidences)/len(confidences):.2f}")
+wave_confidences = [ws.meta.get('wave_confidence', 0) for ws in wave_signals]
+ict_scores = [ws.meta.get('ict_confluence_score', 0) for ws in wave_signals]
+final_confidences = [ws.meta['confidence'] for ws in wave_signals]
+
+if final_confidences:
+    print(f"  Wave confidence: {min(wave_confidences):.2f} - {max(wave_confidences):.2f} (mean: {sum(wave_confidences)/len(wave_confidences):.2f})")
+    print(f"  ICT confluence: {min(ict_scores):.2f} - {max(ict_scores):.2f} (mean: {sum(ict_scores)/len(ict_scores):.2f})")
+    print(f"  Final confidence: {min(final_confidences):.2f} - {max(final_confidences):.2f} (mean: {sum(final_confidences)/len(final_confidences):.2f})")
+
+# ICT structure breakdown
+if wave_signals:
+    ict_counts = {
+        'sweep': sum(1 for ws in wave_signals if ws.ict_confluence and ws.ict_confluence.has_sweep),
+        'displacement': sum(1 for ws in wave_signals if ws.ict_confluence and ws.ict_confluence.has_displacement),
+        'fvg': sum(1 for ws in wave_signals if ws.ict_confluence and ws.ict_confluence.has_fvg),
+        'mss': sum(1 for ws in wave_signals if ws.ict_confluence and ws.ict_confluence.has_mss),
+        'order_block': sum(1 for ws in wave_signals if ws.ict_confluence and ws.ict_confluence.has_order_block)
+    }
+    print(f"  ICT structure presence:")
+    for structure, count in ict_counts.items():
+        pct = (count / len(wave_signals)) * 100
+        print(f"    - {structure}: {count} ({pct:.1f}%)")
 
 # Step 7: Run backtest with wave targets
 print("\nStep 7: Running wave-based backtest (0DTE options)...")

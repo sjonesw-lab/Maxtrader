@@ -2,9 +2,15 @@
 
 ## Overview
 
-MaxTrader is an **intraday NASDAQ trading research engine** that generates quantitative trading signals using ICT (Inner Circle Trader) liquidity concepts on QQQ and executes using options structures. The system is designed as a backtesting framework that combines advanced price action analysis with options trading strategies, with no hard stops on the underlying asset—risk is defined entirely by options payoff structures.
+MaxTrader is an **intraday NASDAQ trading research engine** built on a wave-based Renko framework with multi-timeframe confluence analysis. The system generates quality-driven trading signals by detecting wave impulses, analyzing retracement patterns, and combining daily/4H market context. All trades execute using options structures for defined risk.
 
-The engine analyzes three global trading sessions (Asia, London, NY), detects liquidity sweeps and price action patterns, and generates signals during the NY open window (09:30-11:00 ET). It supports multiple options structures including long calls/puts, debit spreads, butterflies, and broken-wing butterflies.
+**Current Status (as of Nov 15, 2025):**
+- **Win Rate: 43.5%** (target: 60-70%)
+- **Profit Factor: 9.39** (target: >2 ✅)
+- **Trade Frequency: 23 trades/month** (quality-driven, no artificial cooldowns)
+- **Total PnL: $2,249** over 90 days (Aug 18 - Nov 14, 2025)
+
+The engine uses a state-machine approach to detect 3+ brick wave impulses, cache completed waves, wait for genuine retracements (shallow 0-33% or healthy 33-62%), and signal when price enters optimal re-entry zones. ICT structures (sweeps, displacement, FVG, MSS, order blocks) have been implemented but are disabled by default as they degraded performance.
 
 ## User Preferences
 
@@ -28,17 +34,22 @@ Preferred communication style: Simple, everyday language.
 
 **Data Format**: Expects standard OHLCV bars (open, high, low, close, volume) at 1-minute resolution for intraday analysis. The timestamp column must be ISO8601 UTC format in the CSV.
 
-### ICT Structure Detection
+### ICT Structure Detection (Optional, Disabled by Default)
 
-**Liquidity Sweeps**: Detects when price briefly violates a session high/low (creating a wick) but closes back inside, indicating a liquidity grab. Bullish sweeps occur below session lows; bearish sweeps occur above session highs.
+**Status: Implemented but disabled** - Testing showed ICT confluence boost degraded performance (Win Rate -12pp, PF -2.8, PnL -$516).
 
-**Displacement Candles**: Uses ATR (Average True Range) with directional logic to identify abnormally large candles suggesting institutional order flow. Bullish displacement requires close > open with body exceeding threshold * ATR (Config D: 1.0x, Standard: 1.2x). Bearish displacement requires close < open with body exceeding same threshold.
+**Available Structures:**
+- **Liquidity Sweeps**: Detects when price briefly violates a session high/low (creating a wick) but closes back inside, indicating a liquidity grab.
+- **Displacement Candles**: Uses ATR (Average True Range) with directional logic to identify abnormally large candles suggesting institutional order flow.
+- **Fair Value Gaps (FVG)**: Identifies price gaps suggesting inefficient price discovery.
+- **Market Structure Shifts (MSS)**: Tracks swing highs and lows to detect when price breaks recent structure.
+- **Order Blocks**: Identifies the last opposite-colored candle before a strong move.
 
-**Fair Value Gaps (FVG)**: Identifies price gaps where candle N+2's low is above candle N's high (bullish FVG) or candle N+2's high is below candle N's low (bearish FVG), suggesting inefficient price discovery.
-
-**Market Structure Shifts (MSS)**: Tracks swing highs and lows to detect when price breaks recent structure, signaling potential trend changes.
-
-**Order Blocks**: Identifies the last opposite-colored candle before a strong move, representing potential institutional accumulation/distribution zones.
+**Why Disabled:**
+- ICT structures too common (73-83% presence) to add selectivity
+- Multiplicative confidence blending suppressed scores below minimum threshold
+- Distance-based target selection pulled TP1 too close, reducing win rate
+- Can be re-enabled with `use_ict_boost=True` if tuning is improved
 
 ### Renko Chart Engine
 
