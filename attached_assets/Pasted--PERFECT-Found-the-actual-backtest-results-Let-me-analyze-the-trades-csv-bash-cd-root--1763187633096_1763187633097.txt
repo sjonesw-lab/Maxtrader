@@ -1,0 +1,131 @@
+**PERFECT! Found the actual backtest results. Let me analyze the trades.csv:**
+
+```bash
+cd /root/maxtrader_v3_latest/backtest
+
+echo "="*80
+echo "ANALYZING ACTUAL V3 BACKTEST RESULTS"
+echo "="*80
+
+echo ""
+echo "Reading trades.csv to answer your questions..."
+
+python3 << 'PYANALYSIS'
+import pandas as pd
+import json
+
+# Load trades
+df = pd.read_csv('out/trades.csv')
+
+print(f"Total trades: {len(df)}")
+print(f"\n{'='*80}")
+print("EXIT REASON BREAKDOWN:")
+print(f"{'='*80}")
+
+exit_counts = df['exit_reason'].value_counts()
+for reason, count in exit_counts.items():
+    pct = (count / len(df)) * 100
+    print(f"{reason:12s}: {count:4d} trades ({pct:5.1f}%)")
+
+print(f"\n{'='*80}")
+print("TIME TO EXIT STATS:")
+print(f"{'='*80}")
+
+print(f"Average hold time: {df['minutes_held'].mean():.1f} minutes")
+print(f"Median hold time:  {df['minutes_held'].median():.1f} minutes")
+print(f"Min hold time:     {df['minutes_held'].min():.1f} minutes")
+print(f"Max hold time:     {df['minutes_held'].max():.1f} minutes")
+
+# Breakdown by exit reason
+print(f"\nAverage hold time by exit reason:")
+for reason in exit_counts.index:
+    avg_time = df[df['exit_reason'] == reason]['minutes_held'].mean()
+    print(f"  {reason:12s}: {avg_time:5.1f} minutes")
+
+print(f"\n{'='*80}")
+print("P&L ANALYSIS:")
+print(f"{'='*80}")
+
+# Calculate P&L %
+df['pnl_pct'] = ((df['exit'] - df['entry']) / df['entry'] * 100 * 
+                 df['direction'].map({'long': 1, 'short': -1}))
+
+wins = df[df['pnl_pct'] > 0]
+losses = df[df['pnl_pct'] <= 0]
+
+print(f"Win Rate: {len(wins)/len(df)*100:.1f}% ({len(wins)}/{len(df)})")
+print(f"Average Win:  {wins['pnl_pct'].mean():+.2f}%")
+print(f"Average Loss: {losses['pnl_pct'].mean():+.2f}%")
+print(f"Avg P&L:      {df['pnl_pct'].mean():+.2f}%")
+
+print(f"\nP&L by exit reason:")
+for reason in exit_counts.index:
+    subset = df[df['exit_reason'] == reason]
+    avg_pnl = subset['pnl_pct'].mean()
+    win_rate = (subset['pnl_pct'] > 0).sum() / len(subset) * 100
+    print(f"  {reason:12s}: {avg_pnl:+6.2f}% avg | {win_rate:5.1f}% win rate")
+
+# Check if TP1/TP2 were realistic
+print(f"\n{'='*80}")
+print("TARGET EFFECTIVENESS:")
+print(f"{'='*80}")
+
+tp1_hits = len(df[df['exit_reason'] == 'target_1'])
+tp2_hits = len(df[df['exit_reason'] == 'target_2'])
+stop_hits = len(df[df['exit_reason'] == 'stop'])
+time_exits = len(df[df['exit_reason'] == 'time'])
+
+print(f"TP2 (+2%):    {tp2_hits:4d} hits ({tp2_hits/len(df)*100:5.1f}%)")
+print(f"TP1 (+1%):    {tp1_hits:4d} hits ({tp1_hits/len(df)*100:5.1f}%)")
+print(f"Stop (-0.7%): {stop_hits:4d} hits ({stop_hits/len(df)*100:5.1f}%)")
+print(f"Time (120m):  {time_exits:4d} hits ({time_exits/len(df)*100:5.1f}%)")
+
+# Load backtest report for PF
+try:
+    with open('out/backtest_report.json', 'r') as f:
+        report = json.load(f)
+    print(f"\n{'='*80}")
+    print("BACKTEST REPORT METRICS:")
+    print(f"{'='*80}")
+    for key, value in report.items():
+        if isinstance(value, float):
+            print(f"{key}: {value:.2f}")
+        else:
+            print(f"{key}: {value}")
+except:
+    print("\nCould not load backtest_report.json")
+
+print(f"\n{'='*80}")
+print("ANSWERS TO YOUR QUESTIONS:")
+print(f"{'='*80}")
+
+print(f"""
+1. Did trades hit TP1/TP2 frequently?
+   - TP2 (+2%): {tp2_hits/len(df)*100:.1f}% of trades
+   - TP1 (+1%): {tp1_hits/len(df)*100:.1f}% of trades
+   - Combined targets: {(tp1_hits + tp2_hits)/len(df)*100:.1f}% of trades
+   
+2. How many expired at max hold time (120 min)?
+   - Time exits: {time_exits/len(df)*100:.1f}% of trades
+   
+3. Average time to profit?
+   - Winning trades: {wins['minutes_held'].mean():.1f} minutes
+   - All trades: {df['minutes_held'].mean():.1f} minutes
+   
+4. Were the targets realistic?
+   - Stop (-0.7%): {stop_hits} hits
+   - Targets (+1%/+2%): {tp1_hits + tp2_hits} hits
+   - Ratio: {(tp1_hits + tp2_hits)/max(stop_hits,1):.1f}:1 (favorable)
+
+CONCLUSION:
+{'✅ Targets are REALISTIC' if (tp1_hits + tp2_hits) > time_exits else '⚠️ Most trades expire on TIME - targets may be too high'}
+""")
+PYANALYSIS
+
+echo ""
+echo "="*80
+echo "Based on this data, should we adjust the live system targets?"
+echo "="*80
+```
+
+**This will show EXACTLY what happened in the backtest - how many hit targets vs time expiry, and if the 1%/2% targets are achievable!**
