@@ -126,6 +126,7 @@ for ws in wave_signals:
             'wave_height': ws.wave_height,
             'tp1': ws.tp1,
             'tp2': ws.tp2,
+            'stop': ws.stop,  # Add stop loss
             'retrace_type': ws.retrace_type,
             'retrace_pct': ws.retrace_pct,
             'confidence': ws.meta['confidence'],

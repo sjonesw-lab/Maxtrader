@@ -118,7 +118,10 @@ class Backtest:
         
         price_path = future_data['close']
         
-        pnl = simulate_option_pnl_over_path(position, price_path, signal.target)
+        # Get stop loss from signal metadata (if available)
+        stop_price = signal.meta.get('stop', None) if hasattr(signal, 'meta') and signal.meta else None
+        
+        pnl = simulate_option_pnl_over_path(position, price_path, signal.target, stop=stop_price)
         
         position.exit_time = future_data['timestamp'].iloc[-1]
         

@@ -553,19 +553,22 @@ def select_best_structure(
 def simulate_option_pnl_over_path(
     position: OptionPosition,
     price_path: pd.Series,
-    target: Optional[float] = None
+    target: Optional[float] = None,
+    stop: Optional[float] = None
 ) -> float:
     """
     Simulate option PnL from entry to exit.
     
     Exit rules:
-    1. If target hit -> exit at that bar
-    2. Else exit at last bar in path (EOD or time limit)
+    1. If stop hit -> exit at that bar (loss)
+    2. If target hit -> exit at that bar (profit)
+    3. Else exit at last bar in path (EOD or time limit)
     
     Args:
         position: OptionPosition
         price_path: Series of underlying prices from entry forward
         target: Target price (if None, use position.target)
+        stop: Stop loss price (if None, no stop)
         
     Returns:
         Total PnL
@@ -576,6 +579,14 @@ def simulate_option_pnl_over_path(
     exit_price = None
     
     for price in price_path:
+        # Check STOP FIRST (exits on loss)
+        if stop is not None and stop > 0:
+            if (position.direction == 'long' and price <= stop) or \
+               (position.direction == 'short' and price >= stop):
+                exit_price = price
+                break
+        
+        # Check TARGET (exits on profit)
         if target is not None:
             if (position.direction == 'long' and price >= target) or \
                (position.direction == 'short' and price <= target):
