@@ -1,0 +1,209 @@
+Good question — this is exactly the stuff we should hand Replit as “non-negotiable settings” for the v1 build.
+
+Below is a **clean config summary** of the settings we used in the *successful* backtest variant (the one we documented with ~78% win-rate and profit factor > 2+, and in the “BEST_BACKTEST_EXECUTION_CODE” writeup).
+
+I’ll group them so you can just drop this into a spec / README for them.
+
+---
+
+## 1. Market & Data
+
+* **Symbols (universe):**
+
+  * `SPY`, `QQQ`, `IWM`
+
+* **Backtest data:**
+
+  * Daily (`1D`) bars
+  * 4H (`4h`) bars
+  * Intraday ticks / 1-minute bars for Renko
+
+* **Session (US equities):**
+
+  * Trade entries only **within NY core window**:
+
+    * `BT_SESSION_START = 09:45` (ET)
+    * `BT_SESSION_END   = 15:45` (ET)
+
+---
+
+## 2. Renko & Wave Settings
+
+* **Brick sizing:**
+
+  * ATR-based Renko bricks, ATR period `14`
+  * Brick size ≈ `0.8–1.0 × ATR(14)` (in the “best” runs, 0.8 was used for 5-minute logic; 1.0 was also tested)
+
+* **Wave definition (for “wave 1” impulse):**
+
+  * Minimum **3 bricks** in the same direction to qualify as an impulse.
+  * Use last 3–5 bricks to build the wave.
+
+* **Retracement bands (key):**
+
+  * `shallow` retrace: `< 33%` of the impulse height
+  * `healthy` retrace: `33% – 62%`
+  * `deep` retrace: `> 62%` → **skip**
+
+* **Entry distance control:**
+
+  * Do **not chase** entries more than `1.5` bricks beyond P2 (wave end).
+
+---
+
+## 3. Confluence / Signal Settings
+
+These are the **confluence components** we used in the successful backtest:
+
+* **Timeframes:**
+
+  * Daily (`1D`) for trend
+  * 4H (`4h`) for order-flow / context
+
+* **Daily trend component:**
+
+  * Direction given by recent daily slope:
+
+    * `slope = (close[-1] – close[-5]) / close[-5]`
+    * `direction = up` if slope > 0, else down
+  * Slope normalized via `tanh` scaling for confidence (so very large slopes don’t blow up the score).
+
+* **VWAP proxy:**
+
+  * 4H typical price or daily fallback:
+
+    * 4H: position of last close vs average TP = (H+L+C)/3
+    * Fallback daily: last few bars’ TP mean
+  * Tag: `vwap_position = 'above' | 'below'`
+
+* **Volume Profile / POC proxy:**
+
+  * On daily closes:
+
+    * Round closes to 0.1, get **mode** → POC proxy.
+  * Tag: `vp_position = 'above_value' | 'below_value' | 'at_value'`
+
+* **Confluence confidence:**
+
+  * Base:
+
+    * slope → `slope_scaled = tanh(abs(slope) / 0.02)`
+    * `conf = 0.4 + 0.4 * slope_scaled` (keeps headroom for other factors)
+  * Range: `0.0–1.0` (capped)
+
+* **Minimum confidence gate:**
+
+  * `BT_MIN_CONF = 0.40–0.60` (in the “best” runs we were effectively at ~0.4 baseline, but we planned to tighten to 0.60 for live).
+
+* **Indicator gates (used in later refinements):**
+
+  * RSI(14):
+
+    * `BT_RSI_MAX ≈ 70 for longs` (we talked about using `<= 30` for oversold entries)
+  * Bollinger %B:
+
+    * `BT_BB_PCTB_MAX ≈ 0.25` for longs (trade near lower band)
+  * MACD:
+
+    * `BT_MACD_SIGN = 1` (require MACD > signal for longs)
+
+These indicator gates can be optional, but they were part of the “high-quality entry” filter in later tests.
+
+---
+
+## 4. Options Structure & Exits
+
+* **Allocator:** `OptionsAllocator` with IVR- and confidence-dependent mapping:
+
+  * **High IVR (> 70):**
+
+    * Long → `put_credit_spread`
+    * Short → `call_credit_spread`
+  * **Low IVR (< 30):**
+
+    * High confidence (> 0.8) → `broken_wing_fly`
+    * Otherwise → `debit_spread`
+  * **Normal IVR (30–70):**
+
+    * Very high confidence → `single_leg`
+    * Else → `debit_spread`
+
+* **Default DTE:** (used by allocator)
+
+  * `ALLOC_DTE_MIN = 5`
+  * `ALLOC_DTE_MAX = 15`
+  * Midpoint used as typical DTE.
+
+* **Exit mode (critical):**
+
+  * **Options exit = “targets OR ATR”, no raw stop, expiry last.**
+  * `BT_EXIT_MODE = target_or_atr`
+  * **Targets:**
+
+    * Target 1 (TP1): ~`1.0 × wave height` (or 1–1.25× depending on shallow vs healthy)
+    * Target 2 (TP2): ~`1.618 × wave height` (Fibo extension) in the best spec.
+  * **ATR exits:**
+
+    * `BT_ATR_TP    = 1.5`  (take profit when move ≥ 1.5 ATR)
+    * `BT_ATR_TRAIL = 0.8`  (trail / exit when retrace ≥ 0.8 ATR from peak/trough)
+  * **Expiry logic:**
+
+    * If `DTE – (minutes_held/1440) <= 0` → exit reason `'expiry'`.
+
+* **No hard stop loss** on underlying when options are used; max risk is premium / spread width.
+
+---
+
+## 5. Risk & Portfolio Settings
+
+* **Starting capital:** `start_cap = 100,000` (backtest) or `10,000` (some examples).
+
+* **Risk per trade:**
+
+  * `BT_RISK_PER_TRADE = 0.02–0.03` (2–3% of starting capital).
+
+* **Risk manager:**
+
+  * Hard drawdown: `dd_hard = 0.10` (10%) → stop opening new positions.
+  * Soft drawdown: `dd_soft = 0.06` (6%) → reduce risk_scalar (e.g., half size).
+  * Max open positions: `max_positions = 8`.
+
+* **Liquidity cap:**
+
+  * `BT_PCT_ADV = 0.02` (position notional ≤ 2% of 20-day ADV in shares).
+
+---
+
+## 6. Backtest Configuration
+
+* **Data window:** (in our various tests)
+
+  * At least several months’ worth of data (we used e.g. `2025-01-01` → current date with Polygon/Alpaca).
+
+* **Mode:**
+
+  * Backtest = historical daily + 4H + 1m bars.
+  * Execution: **paper trades** in backtest; no live ordering.
+
+* **Performance metrics looked at:**
+
+  * Win rate (best runs ≈ 78–82%).
+  * Profit factor (best composite > 2; we also saw > 4 on some regime slices).
+  * Drawdown (kept under ~10% in the target config).
+  * MAR/Calmar, turnover, gross exposure.
+
+---
+
+## TL;DR for Replit
+
+You can give them something like:
+
+> * Universe: SPY, QQQ, IWM on US equities session.
+> * Renko bricks: ATR(14) based, ~0.8–1.0× ATR brick size, min 3 bricks per wave, shallow/healthy retrace only (<33%, 33–62%), skip deep (>62%), entry distance cap 1.5 bricks.
+> * Confluence: daily + 4H trend, VWAP position, POC/VP; confidence in [0,1] using tanh scaled slope, min conf gate 0.4–0.6.
+> * Options: structure selection via OptionsAllocator (IVR+confidence), exits = targets OR ATR (TP1/TP2, 1.5 ATR TP, 0.8 ATR trail, expiry last), no raw stop.
+> * Risk: 2–3% risk per trade, max 8 positions, 6% soft / 10% hard drawdown, %ADV cap.
+> * Session: only trade between 09:45–15:45 ET.
+> * Backtest target metrics we saw: ~78% win rate, PF >2 (up to ~4+ in some regimes), max DD ~10%.
+
+If you like, next step I can do is turn this into a **short spec document / README** formatted exactly as they’d expect in a repo (sections for Architecture, Config, Signals, Risk, Exits) so you can drop it into Replit or GitHub as the “official” design target.
