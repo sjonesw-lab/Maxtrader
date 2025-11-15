@@ -56,11 +56,12 @@ class HighVolStrategy(BaseStrategy):
         """
         super().__init__(config)
         
-        self.min_wick_ratio = config.get('min_wick_ratio', 2.0)
-        self.reclaim_bars = config.get('reclaim_bars', 3)
-        self.risk_pct = config.get('risk_pct', 0.0075)  # 0.75%
-        self.target_mode = config.get('target_mode', 'vwap')
-        self.atr_target_mult = config.get('atr_target_mult', 1.0)
+        cfg = config or {}
+        self.min_wick_ratio = cfg.get('min_wick_ratio', 1.5)  # Relaxed from 2.0
+        self.reclaim_bars = cfg.get('reclaim_bars', 5)  # Increased from 3
+        self.risk_pct = cfg.get('risk_pct', 0.0075)  # 0.75%
+        self.target_mode = cfg.get('target_mode', 'vwap')
+        self.atr_target_mult = cfg.get('atr_target_mult', 1.0)
         
     def generate_signals(self, context: MarketContext) -> List[StrategySignal]:
         """
@@ -93,12 +94,9 @@ class HighVolStrategy(BaseStrategy):
         # Calculate VWAP for targets
         vwap = calculate_vwap(df)
         
-        # Check last 5 bars for sweep + reclaim patterns
-        for i in range(-5, 0):
-            idx = len(df) + i
-            if idx < 10:
-                continue
-                
+        # ARCHITECT FIX: Scan entire dataframe, not just last 5 bars
+        # Start from bar 50 to have enough history for key levels
+        for idx in range(50, len(df)):
             bar = df.iloc[idx]
             
             # Check for sweep of each key level
@@ -182,12 +180,14 @@ class HighVolStrategy(BaseStrategy):
         
         # Check for bullish sweep (sweep low, reclaim above)
         if bar['low'] < level and bar['close'] > level:
-            # Wick must be significant (at least 2x body)
+            # ARCHITECT FIX: Relax wick requirement
+            # Wick should be meaningful but not overly strict
             body = abs(bar['close'] - bar['open'])
             lower_wick = bar['open'] - bar['low'] if bar['close'] > bar['open'] else bar['close'] - bar['low']
             
-            if lower_wick < body * self.min_wick_ratio:
-                return None
+            # Allow any wick, but prefer larger wicks via confidence boost later
+            if body == 0:
+                body = 0.01  # Avoid division by zero
             
             # Check reclaim in next bars
             reclaimed = self._check_reclaim(df, idx, level, direction='long')
@@ -214,8 +214,8 @@ class HighVolStrategy(BaseStrategy):
                 # Calculate R:R
                 rr = self.calculate_risk_reward(entry, tp1, stop)
                 
-                # Only take if R:R >= 1.5:1
-                if rr < 1.5:
+                # ARCHITECT FIX: Relax R:R to 1.2:1 for high vol chaos
+                if rr < 1.2:
                     return None
                 
                 return StrategySignal(
@@ -242,12 +242,13 @@ class HighVolStrategy(BaseStrategy):
         
         # Check for bearish sweep (sweep high, reclaim below)
         elif bar['high'] > level and bar['close'] < level:
-            # Wick must be significant
+            # ARCHITECT FIX: Relax wick requirement
             body = abs(bar['close'] - bar['open'])
             upper_wick = bar['high'] - bar['close'] if bar['close'] > bar['open'] else bar['high'] - bar['open']
             
-            if upper_wick < body * self.min_wick_ratio:
-                return None
+            # Allow any wick
+            if body == 0:
+                body = 0.01
             
             # Check reclaim
             reclaimed = self._check_reclaim(df, idx, level, direction='short')
@@ -274,8 +275,8 @@ class HighVolStrategy(BaseStrategy):
                 # Calculate R:R
                 rr = self.calculate_risk_reward(entry, tp1, stop)
                 
-                # Only take if R:R >= 1.5:1
-                if rr < 1.5:
+                # ARCHITECT FIX: Relax R:R to 1.2:1 for high vol chaos
+                if rr < 1.2:
                     return None
                 
                 return StrategySignal(

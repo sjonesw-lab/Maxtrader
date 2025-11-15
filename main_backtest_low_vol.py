@@ -28,7 +28,7 @@ print("="*70)
 
 # Load Dec 2024 data
 print("\nStep 1: Loading Dec 2024 low-volatility data...")
-provider = CSVDataProvider('data/QQQ_1m_lowvol_dec2024.csv')
+provider = CSVDataProvider('data/QQQ_1m_lowvol_2024.csv')
 df_1min = provider.load_bars()
 print(f"  ✓ Loaded {len(df_1min)} bars")
 print(f"  ✓ Price range: ${df_1min['low'].min():.2f} - ${df_1min['high'].max():.2f}")

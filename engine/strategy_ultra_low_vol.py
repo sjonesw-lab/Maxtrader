@@ -55,11 +55,12 @@ class UltraLowVolStrategy(BaseStrategy):
         """
         super().__init__(config)
         
-        self.vwap_std_threshold = config.get('vwap_std_threshold', 2.0)
-        self.range_definition_bars = config.get('range_definition_bars', 90)
-        self.risk_pct = config.get('risk_pct', 0.0125)  # 1.25%
-        self.target_atr_mult = config.get('target_atr_mult', 0.6)
-        self.min_range_pct = config.get('min_range_pct', 0.003)  # 0.3%
+        cfg = config or {}
+        self.vwap_std_threshold = cfg.get('vwap_std_threshold', 1.5)  # ARCHITECT FIX: Relaxed from 2.0
+        self.range_definition_bars = cfg.get('range_definition_bars', 60)  # ARCHITECT FIX: Reduced from 90
+        self.risk_pct = cfg.get('risk_pct', 0.0125)  # 1.25%
+        self.target_atr_mult = cfg.get('target_atr_mult', 0.6)
+        self.min_range_pct = cfg.get('min_range_pct', 0.002)  # ARCHITECT FIX: Relaxed from 0.3% to 0.2%
         
     def generate_signals(self, context: MarketContext) -> List[StrategySignal]:
         """
@@ -125,26 +126,26 @@ class UltraLowVolStrategy(BaseStrategy):
         """
         Define intraday trading range.
         
-        Uses first N bars (default 90 = first 90 minutes) to establish range.
+        ARCHITECT FIX: Use adaptive range - either first N bars or all available if less.
         
         Returns:
             Dictionary with range_high, range_low, range_mid, start_idx
         """
-        # Use session start to define range
-        # For now, use first 90 bars of available data
+        # ARCHITECT FIX: Handle partial days - use what's available
+        n_bars = min(self.range_definition_bars, len(df))
         
-        if len(df) < self.range_definition_bars:
+        if n_bars < 30:  # Need at least 30 bars
             return None
         
         # Define range from first N bars
-        range_bars = df.head(self.range_definition_bars)
+        range_bars = df.head(n_bars)
         
         range_high = range_bars['high'].max()
         range_low = range_bars['low'].min()
         range_mid = (range_high + range_low) / 2
         range_size = range_high - range_low
         
-        # Check if range is meaningful (at least 0.3% of price)
+        # ARCHITECT FIX: Relaxed range check (was 0.3%, now 0.2%)
         if range_size / range_mid < self.min_range_pct:
             return None
         
@@ -153,12 +154,14 @@ class UltraLowVolStrategy(BaseStrategy):
             'low': range_low,
             'mid': range_mid,
             'size': range_size,
-            'start_idx': self.range_definition_bars
+            'start_idx': n_bars
         }
     
     def _calculate_vwap_bands(self, df: pd.DataFrame, start_idx: int) -> dict:
         """
         Calculate VWAP and standard deviation bands.
+        
+        ARCHITECT FIX: Use rolling window to avoid tiny sigma on early bars.
         
         Args:
             df: 1-minute data
@@ -167,7 +170,8 @@ class UltraLowVolStrategy(BaseStrategy):
         Returns:
             Dictionary with vwap, upper_band, lower_band, std
         """
-        session_df = df.iloc[start_idx:]
+        # ARCHITECT FIX: Use larger rolling window (last 100 bars) instead of from start_idx
+        session_df = df.tail(min(100, len(df)))
         
         if len(session_df) == 0:
             return {'vwap': 0, 'upper_band': 0, 'lower_band': 0, 'std': 0}
@@ -184,7 +188,7 @@ class UltraLowVolStrategy(BaseStrategy):
         price_dev = typical_price - vwap
         std = price_dev.std()
         
-        # Bands at ±2 std dev
+        # ARCHITECT FIX: Bands at ±1.5 std dev (was 2.0)
         upper_band = vwap + (self.vwap_std_threshold * std)
         lower_band = vwap - (self.vwap_std_threshold * std)
         
