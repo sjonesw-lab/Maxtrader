@@ -37,9 +37,11 @@ class OptionPosition:
     
     def __post_init__(self):
         if self.entry_cost == 0.0:
-            # Calculate theoretical premium cost
+            CONTRACT_MULTIPLIER = 100  # Options contracts represent 100 shares
+            
+            # Calculate theoretical premium cost (convert per-share to per-contract)
             theoretical_cost = sum(
-                opt.premium * opt.quantity * (1 if opt.is_long else -1)
+                opt.premium * opt.quantity * CONTRACT_MULTIPLIER * (1 if opt.is_long else -1)
                 for opt in self.options
             )
             
@@ -48,9 +50,9 @@ class OptionPosition:
             commission = 0.65 * total_legs  # $0.65 per contract
             slippage = 0.05 * total_legs    # ~$0.05 per contract
             
-            # Bid-ask spread: pay 2% more on buys, receive 2% less on sells
+            # Bid-ask spread: 2% of contract value
             bid_ask_cost = sum(
-                abs(opt.premium) * opt.quantity * 0.02
+                abs(opt.premium * CONTRACT_MULTIPLIER) * opt.quantity * 0.02
                 for opt in self.options
             )
             
@@ -404,8 +406,9 @@ def calculate_payoff_at_price(position: OptionPosition, price: float) -> float:
         price: Underlying price
         
     Returns:
-        Payoff (positive = profit, negative = loss)
+        Payoff in dollars (positive = profit, negative = loss)
     """
+    CONTRACT_MULTIPLIER = 100  # Options contracts represent 100 shares
     total_payoff = 0.0
     
     for opt in position.options:
@@ -414,12 +417,14 @@ def calculate_payoff_at_price(position: OptionPosition, price: float) -> float:
         else:
             intrinsic = max(0, opt.strike - price)
         
-        payoff = intrinsic - opt.premium
+        # Payoff per share, then multiply by contract size
+        payoff_per_share = intrinsic - opt.premium
+        payoff_per_contract = payoff_per_share * CONTRACT_MULTIPLIER
         
         if opt.is_long:
-            total_payoff += payoff * opt.quantity
+            total_payoff += payoff_per_contract * opt.quantity
         else:
-            total_payoff -= payoff * opt.quantity
+            total_payoff -= payoff_per_contract * opt.quantity
     
     return total_payoff
 

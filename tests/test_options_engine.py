@@ -74,16 +74,13 @@ def test_60min_option_pricing_realistic():
     # Build long call
     position = build_long_option('long', spot, strikes, expiry, entry_time)
     
-    # Verify premium is realistic (at least $0.10, the minimum floor)
-    assert position.entry_cost >= 0.10, f"60-min option premium too low: ${position.entry_cost:.2f}"
+    # Verify cost is in realistic contract-level range ($100-$500 for 60-min ATM)
+    # Per-share premium ~$3 × 100 shares + commissions/slippage = ~$310-320
+    assert position.entry_cost >= 100, f"60-min contract cost too low: ${position.entry_cost:.2f}"
+    assert position.entry_cost < 500, f"60-min contract cost too high: ${position.entry_cost:.2f}"
     
-    # Verify premium is not excessive (< $5.00 for ATM 60-min call)
-    # This prevents the original $0.01 bug while allowing reasonable pricing
-    assert position.entry_cost < 5.00, f"60-min option premium too high: ${position.entry_cost:.2f}"
-    
-    # Most importantly: verify this prevents 67R outliers
-    # With $3 cost and $1.56 move to target, max R = 1.56/3 = 0.52R (losing trade)
-    # This is acceptable - not all trades will be profitable with higher entry costs
+    # Most importantly: verify this prevents unrealistic 67R outliers
+    # Real contract costs make R-multiples realistic
     
     # Verify it's properly calculated using fractional days (not 0 days)
     # 60 minutes = 0.042 days, which should produce reasonable time value
