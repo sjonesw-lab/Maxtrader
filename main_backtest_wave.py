@@ -81,20 +81,22 @@ for regime, count in regime_counts.items():
     pct = (count / len(df_1min)) * 100
     print(f"    - {regime}: {pct:.1f}%")
 
-# Step 6: Generate wave-based signals with multi-TF confluence
-print("\nStep 6: Generating wave signals with multi-TF confluence...")
-print("  Testing: FIXED % TARGETS (v3 proven approach)")
-print("  Quality filters:")
+# Step 6: Generate wave-based signals with ALL QUALITY FILTERS
+print("\nStep 6: Generating wave signals with ENHANCED filters...")
+print("  Testing: ALL QUALITY FILTERS ENABLED")
+print("  Wave filters:")
 print("    - Wave: 3+ brick impulse")
 print("    - Retracement: shallow/healthy only (skip deep >62%)")
 print("    - Entry distance: ≤1.5 bricks from P2")
 print("    - Confluence: daily+4H alignment, min 0.40 confidence")
-print("    - Session: 09:45-15:45 ET")
-print("  Targets:")
-print("    - TP1: +1% from entry")
-print("    - TP2: +2% from entry")
-print("    - Stop: -0.7% from entry")
-print("    - Max hold: 120 minutes")
+print("  NEW Quality filters:")
+print("    - ✓ Liquidity sweeps: Rare ICT structure (17% presence)")
+print("    - ✓ Volume confirmation: 1.2x above 20-bar MA")
+print("    - ✓ Time-of-day: Avoid lunch chop (12:00-13:30)")
+print("    - ✓ Dynamic targets: ATR-based realistic 0.3-0.5% moves")
+print("  Session: 09:45-15:45 ET")
+print("  Targets: Dynamic ATR-based (brick_size * 0.5)")
+print("  Max hold: 120 minutes")
 
 wave_signals = generate_wave_signals(
     df_1min=df_1min,
@@ -107,7 +109,11 @@ wave_signals = generate_wave_signals(
     max_entry_distance=1.5,
     min_confidence=0.40,
     use_ict_boost=False,
-    target_mode='fixed_pct'  # Test v3 proven % targets
+    target_mode='fixed_pct',  # Keep fixed % as baseline
+    require_sweep=True,  # Liquidity sweep filter
+    use_volume_filter=True,  # Volume confirmation
+    avoid_lunch_chop=True,  # Time-of-day filter
+    use_dynamic_targets=True  # ATR-based dynamic targets
 )
 
 print(f"\n  ✓ Generated {len(wave_signals)} wave signals")
@@ -176,8 +182,8 @@ if wave_signals:
         pct = (count / len(wave_signals)) * 100
         print(f"    - {structure}: {count} ({pct:.1f}%)")
 
-# Step 7: Run backtest with fixed % targets (120 min hold)
-print("\nStep 7: Running backtest with fixed % targets (0DTE options)...")
+# Step 7: Run backtest with enhanced filters (120 min hold)
+print("\nStep 7: Running backtest with ALL quality filters (0DTE options)...")
 backtest = Backtest(df_1min, min_rr_ratio=1.2)
 results = backtest.run(signals, max_bars_held=120)  # 120 min per v3 config
 

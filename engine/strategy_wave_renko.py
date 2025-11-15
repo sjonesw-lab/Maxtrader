@@ -55,7 +55,11 @@ def generate_wave_signals(
     session_start: tuple = (9, 45),
     session_end: tuple = (15, 45),
     use_ict_boost: bool = True,
-    target_mode: str = 'wave'
+    target_mode: str = 'wave',
+    require_sweep: bool = False,
+    use_volume_filter: bool = False,
+    avoid_lunch_chop: bool = False,
+    use_dynamic_targets: bool = False
 ) -> List[WaveSignal]:
     """
     Generate trading signals using wave analysis with proper retracement detection.
@@ -89,12 +93,21 @@ def generate_wave_signals(
         session_end: (hour, minute) for session end (default: 3:45 PM)
         use_ict_boost: Enable ICT confluence boost (default: True)
         target_mode: 'wave' for wave-based targets or 'fixed_pct' for % targets (default: 'wave')
+        require_sweep: Only trade when liquidity sweep present (default: False)
+        use_volume_filter: Require above-average volume on wave (default: False)
+        avoid_lunch_chop: Skip 12:00-13:30 ET lunch period (default: False)
+        use_dynamic_targets: Scale targets to ATR-based realistic moves (default: False)
         
     Returns:
         List of WaveSignal objects
     """
     signals = []
     active_wave = None  # Track the current wave waiting for retracement
+    
+    # Calculate volume moving average if using volume filter
+    volume_ma = None
+    if use_volume_filter and 'volume' in df_1min.columns:
+        volume_ma = df_1min['volume'].rolling(window=20).mean()
     
     for idx in range(min_bricks, len(renko_df)):
         brick = renko_df.iloc[idx]
@@ -109,6 +122,13 @@ def generate_wave_signals(
         
         if not (start_time <= time_in_minutes <= end_time):
             continue
+        
+        # TIME-OF-DAY FILTER: Avoid lunch chop (12:00-13:30 ET)
+        if avoid_lunch_chop:
+            lunch_start = 12 * 60  # 12:00
+            lunch_end = 13 * 60 + 30  # 13:30
+            if lunch_start <= time_in_minutes <= lunch_end:
+                continue
         
         current_price = brick['brick_close']
         current_direction = brick['direction']
@@ -181,8 +201,22 @@ def generate_wave_signals(
         if not is_aligned:
             continue
         
-        # TARGET CALCULATION: Wave-based or fixed percentage
-        if target_mode == 'fixed_pct':
+        # TARGET CALCULATION: Dynamic ATR-based, fixed %, or wave-based
+        if use_dynamic_targets:
+            # Dynamic targets based on ATR (realistic 0.3-0.5% for 2-hour moves)
+            # Use brick_size as proxy for ATR
+            target_distance = brick_size * 0.5  # Half brick for realistic target
+            stop_distance = brick_size * 0.35  # Tighter stop
+            
+            if signal_direction == 'long':
+                tp1 = current_price + target_distance
+                tp2 = current_price + (target_distance * 1.5)
+                stop = current_price - stop_distance
+            else:  # short
+                tp1 = current_price - target_distance
+                tp2 = current_price - (target_distance * 1.5)
+                stop = current_price + stop_distance
+        elif target_mode == 'fixed_pct':
             # Fixed % targets (v3 proven approach)
             # TP1: +1%, TP2: +2%, Stop: -0.7%
             if signal_direction == 'long':
@@ -242,6 +276,25 @@ def generate_wave_signals(
             continue
         elif signal_direction == 'short' and regime not in ['bear_trend', 'sideways']:
             continue
+        
+        # LIQUIDITY SWEEP FILTER: Only trade if sweep present (rare, high quality)
+        if require_sweep:
+            has_sweep = regime_row.get('sweep', False)
+            if not has_sweep:
+                continue
+        
+        # VOLUME FILTER: Require above-average volume on wave impulse
+        if use_volume_filter and volume_ma is not None:
+            # Check volume at wave formation (around P1-P2 range)
+            wave_start_mask = df_1min['timestamp'] <= timestamp
+            if wave_start_mask.any():
+                wave_idx = wave_start_mask.sum() - 1
+                if wave_idx >= 0 and wave_idx < len(volume_ma):
+                    current_vol = df_1min['volume'].iloc[wave_idx]
+                    avg_vol = volume_ma.iloc[wave_idx]
+                    # Require volume at least 1.2x average
+                    if pd.notna(avg_vol) and current_vol < avg_vol * 1.2:
+                        continue
         
         # CREATE SIGNAL
         signal = WaveSignal(
