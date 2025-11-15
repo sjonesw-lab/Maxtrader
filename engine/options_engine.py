@@ -14,6 +14,39 @@ import pandas as pd
 import numpy as np
 
 
+def calculate_0dte_expiry(entry_time: pd.Timestamp) -> pd.Timestamp:
+    """
+    Calculate 0DTE (same-day) expiry time for QQQ options.
+    
+    QQQ options expire at 4:15 PM ET on the same trading day.
+    
+    Args:
+        entry_time: Entry timestamp (can be tz-aware or naive)
+        
+    Returns:
+        Expiry timestamp (4:15 PM same day) with same timezone as entry_time
+    """
+    # Preserve timezone from entry_time
+    if entry_time.tz is not None:
+        tz = entry_time.tz
+    else:
+        tz = None  # Keep naive if input is naive
+    
+    entry_date = entry_time.date()
+    
+    # Create expiry at 4:15 PM same day with matching timezone
+    expiry = pd.Timestamp(
+        year=entry_date.year,
+        month=entry_date.month,
+        day=entry_date.day,
+        hour=16,
+        minute=15,
+        tz=tz
+    )
+    
+    return expiry
+
+
 @dataclass
 class Option:
     """Single option leg."""
@@ -195,7 +228,6 @@ def build_long_option(
     direction: str,
     spot: float,
     strikes: List[float],
-    expiry: pd.Timestamp,
     entry_time: pd.Timestamp
 ) -> OptionPosition:
     """
@@ -205,12 +237,14 @@ def build_long_option(
         direction: 'long' or 'short'
         spot: Current spot price
         strikes: Available strikes
-        expiry: Option expiry
         entry_time: Entry timestamp
         
     Returns:
         OptionPosition
     """
+    # Use 0DTE expiry (4:15 PM same day)
+    expiry = calculate_0dte_expiry(entry_time)
+    
     atm_strike = find_nearest_strike(spot, strikes)
     
     kind = 'call' if direction == 'long' else 'put'
@@ -241,7 +275,6 @@ def build_debit_spread(
     spot: float,
     target: float,
     strikes: List[float],
-    expiry: pd.Timestamp,
     entry_time: pd.Timestamp
 ) -> OptionPosition:
     """
@@ -255,12 +288,14 @@ def build_debit_spread(
         spot: Current spot price
         target: Target price
         strikes: Available strikes
-        expiry: Option expiry
         entry_time: Entry timestamp
         
     Returns:
         OptionPosition
     """
+    # Use 0DTE expiry (4:15 PM same day)
+    expiry = calculate_0dte_expiry(entry_time)
+    
     atm_strike = find_nearest_strike(spot, strikes)
     target_strike = find_nearest_strike(target, strikes)
     
@@ -303,7 +338,6 @@ def build_fly(
     spot: float,
     target: float,
     strikes: List[float],
-    expiry: pd.Timestamp,
     entry_time: pd.Timestamp
 ) -> OptionPosition:
     """
@@ -314,12 +348,14 @@ def build_fly(
         spot: Current spot price
         target: Target price
         strikes: Available strikes
-        expiry: Option expiry
         entry_time: Entry timestamp
         
     Returns:
         OptionPosition
     """
+    # Use 0DTE expiry (4:15 PM same day)
+    expiry = calculate_0dte_expiry(entry_time)
+    
     lower, body, upper = choose_fly_strikes(direction, spot, target, strikes)
     
     kind = 'call' if direction == 'long' else 'put'
@@ -350,7 +386,6 @@ def build_broken_wing_fly(
     spot: float,
     target: float,
     strikes: List[float],
-    expiry: pd.Timestamp,
     entry_time: pd.Timestamp
 ) -> OptionPosition:
     """
@@ -361,12 +396,14 @@ def build_broken_wing_fly(
         spot: Current spot price
         target: Target price
         strikes: Available strikes
-        expiry: Option expiry
         entry_time: Entry timestamp
         
     Returns:
         OptionPosition
     """
+    # Use 0DTE expiry (4:15 PM same day)
+    expiry = calculate_0dte_expiry(entry_time)
+    
     lower, body, upper = choose_fly_strikes(direction, spot, target, strikes)
     
     if direction == 'long':
@@ -456,7 +493,6 @@ def select_best_structure(
     spot: float,
     target: float,
     strikes: List[float],
-    expiry: pd.Timestamp,
     entry_time: pd.Timestamp,
     mode: str = "auto"
 ) -> OptionPosition:
@@ -478,7 +514,6 @@ def select_best_structure(
         spot: Current spot price
         target: Target price
         strikes: Available strikes
-        expiry: Option expiry
         entry_time: Entry timestamp
         mode: Selection mode (default: 'auto')
         
@@ -487,22 +522,22 @@ def select_best_structure(
     """
     candidates = []
     
-    long_opt = build_long_option(direction, spot, strikes, expiry, entry_time)
+    long_opt = build_long_option(direction, spot, strikes, entry_time)
     payoff_at_target = calculate_payoff_at_price(long_opt, target)
     rr = payoff_at_target / abs(long_opt.entry_cost) if long_opt.entry_cost != 0 else 0
     candidates.append(('long_option', long_opt, rr))
     
-    spread = build_debit_spread(direction, spot, target, strikes, expiry, entry_time)
+    spread = build_debit_spread(direction, spot, target, strikes, entry_time)
     payoff_at_target = calculate_payoff_at_price(spread, target)
     rr = payoff_at_target / abs(spread.entry_cost) if spread.entry_cost != 0 else 0
     candidates.append(('debit_spread', spread, rr))
     
-    fly = build_fly(direction, spot, target, strikes, expiry, entry_time)
+    fly = build_fly(direction, spot, target, strikes, entry_time)
     payoff_at_target = calculate_payoff_at_price(fly, target)
     rr = payoff_at_target / abs(fly.entry_cost) if fly.entry_cost != 0 else 0
     candidates.append(('fly', fly, rr))
     
-    bwfly = build_broken_wing_fly(direction, spot, target, strikes, expiry, entry_time)
+    bwfly = build_broken_wing_fly(direction, spot, target, strikes, entry_time)
     payoff_at_target = calculate_payoff_at_price(bwfly, target)
     rr = payoff_at_target / abs(bwfly.entry_cost) if bwfly.entry_cost != 0 else 0
     candidates.append(('broken_wing_fly', bwfly, rr))

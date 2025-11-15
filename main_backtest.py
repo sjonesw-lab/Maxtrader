@@ -18,7 +18,7 @@ from pathlib import Path
 from engine.data_provider import CSVDataProvider
 from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.ict_structures import detect_all_structures
-from engine.regime_context import build_regime_context, add_session_labels_to_3min
+from engine.regime_context import build_regime_context, add_session_labels_to_entry_tf
 from engine.regimes import get_regime_stats
 from engine.strategy import generate_signals_relaxed
 from engine.backtest import Backtest
@@ -54,77 +54,113 @@ def main():
     print(f"  ✓ Session labels added to 1-min data")
     print()
     
-    print("Step 3: Building regime context (15-min → 3-min)...")
-    df_3min, df_15min = build_regime_context(df_1min, renko_k=1.0)
-    print(f"  ✓ Built 15-min regime context: {len(df_15min)} bars")
-    print(f"  ✓ Resampled to 3-min: {len(df_3min)} bars")
+    # Test 2-min, 3-min, 5-min entry timeframes
+    entry_timeframes = ['2min', '3min', '5min']
+    results_by_tf = {}
     
-    regime_stats = get_regime_stats(df_15min)
-    print(f"  ✓ Regime detection complete")
-    for regime, pct in regime_stats['regime_percentages'].items():
-        print(f"    - {regime}: {pct:.1f}%")
-    print()
-    
-    print("Step 4: Adding session labels to 3-min...")
-    df_3min = add_session_labels_to_3min(df_1min, df_3min)
-    df_3min = add_session_highs_lows(df_3min)
-    print(f"  ✓ Session labels and highs/lows added to 3-min data")
-    print()
-    
-    print("Step 5: Detecting ICT structures on 3-min (displacement threshold: 1.0x ATR)...")
-    df_3min = detect_all_structures(df_3min, displacement_threshold=1.0)
-    print(f"  ✓ All ICT structures detected on 3-min timeframe")
-    print()
-    
-    print("Step 6: Generating signals (Config D: relaxed, NY window: 09:30-12:00)...")
-    signals = generate_signals_relaxed(
-        df_3min,
-        require_fvg=False,
-        displacement_threshold=1.0,
-        extended_window=True,
-        enable_regime_filter=True
-    )
-    
-    print(f"  ✓ Generated {len(signals)} signals")
-    
-    if signals:
-        long_signals = [s for s in signals if s.direction == 'long']
-        short_signals = [s for s in signals if s.direction == 'short']
-        print(f"    - Long signals: {len(long_signals)}")
-        print(f"    - Short signals: {len(short_signals)}")
+    for entry_tf in entry_timeframes:
+        print(f"\n{'='*70}")
+        print(f"TESTING {entry_tf.upper()} ENTRY TIMEFRAME")
+        print(f"{'='*70}\n")
         
-        signals_by_regime = {}
-        for signal in signals:
-            regime = signal.meta.get('regime', 'unknown')
-            signals_by_regime[regime] = signals_by_regime.get(regime, 0) + 1
+        print(f"Step 3: Building regime context (30-min → {entry_tf})...")
+        df_entry, df_trend = build_regime_context(
+            df_1min,
+            entry_timeframe=entry_tf,
+            trend_timeframe='30min',
+            renko_k=1.0
+        )
+        print(f"  ✓ Built 30-min regime context: {len(df_trend)} bars")
+        print(f"  ✓ Resampled to {entry_tf}: {len(df_entry)} bars")
         
-        print(f"  Signals by regime:")
-        for regime, count in signals_by_regime.items():
-            print(f"    - {regime}: {count}")
+        regime_stats = get_regime_stats(df_trend)
+        print(f"  ✓ Regime detection complete")
+        for regime, pct in regime_stats['regime_percentages'].items():
+            print(f"    - {regime}: {pct:.1f}%")
+        print()
+        
+        print(f"Step 4: Adding session labels to {entry_tf}...")
+        df_entry = add_session_labels_to_entry_tf(df_1min, df_entry)
+        df_entry = add_session_highs_lows(df_entry)
+        print(f"  ✓ Session labels and highs/lows added to {entry_tf} data")
+        print()
+        
+        print(f"Step 5: Detecting ICT structures on {entry_tf} (displacement threshold: 1.0x ATR)...")
+        df_entry = detect_all_structures(df_entry, displacement_threshold=1.0)
+        print(f"  ✓ All ICT structures detected on {entry_tf} timeframe")
+        print()
+        
+        print("Step 6: Generating signals (Config D: relaxed, NY window: 09:30-12:00)...")
+        signals = generate_signals_relaxed(
+            df_entry,
+            require_fvg=False,
+            displacement_threshold=1.0,
+            extended_window=True,
+            enable_regime_filter=True
+        )
+        
+        print(f"  ✓ Generated {len(signals)} signals")
+        
+        if signals:
+            long_signals = [s for s in signals if s.direction == 'long']
+            short_signals = [s for s in signals if s.direction == 'short']
+            print(f"    - Long signals: {len(long_signals)}")
+            print(f"    - Short signals: {len(short_signals)}")
+            
+            signals_by_regime = {}
+            for signal in signals:
+                regime = signal.meta.get('regime', 'unknown')
+                signals_by_regime[regime] = signals_by_regime.get(regime, 0) + 1
+            
+            print(f"  Signals by regime:")
+            for regime, count in signals_by_regime.items():
+                print(f"    - {regime}: {count}")
+        print()
+        
+        if len(signals) == 0:
+            print("No signals generated for this timeframe.")
+            results_by_tf[entry_tf] = {
+                'total_trades': 0,
+                'win_rate': 0.0,
+                'avg_r_multiple': 0.0,
+                'total_pnl': 0.0,
+                'equity_curve': []
+            }
+            continue
+        
+        print(f"Step 7: Running options backtest with 1.6 R:R filter...")
+        backtest = Backtest(df_entry, min_rr_ratio=1.6)
+        results = backtest.run(signals, max_bars_held=20)
+        
+        print(f"  ✓ Backtest complete")
+        print()
+        
+        print("PERFORMANCE SUMMARY")
+        print("-" * 70)
+        print(f"Total Trades:        {results['total_trades']}")
+        print(f"Win Rate:            {results['win_rate']*100:.1f}%")
+        print(f"Average PnL:         ${results['avg_pnl']:.2f}")
+        print(f"Average R-Multiple:  {results['avg_r_multiple']:.2f}R")
+        print(f"Total PnL:           ${results['total_pnl']:.2f}")
+        print(f"Max Drawdown:        ${results['max_drawdown']:.2f}")
+        print()
+        
+        results_by_tf[entry_tf] = results
+    
+    # Print comparison
+    print("\n" + "="*70)
+    print("TIMEFRAME COMPARISON")
+    print("="*70)
+    for tf, res in results_by_tf.items():
+        print(f"{tf}: {res['total_trades']} trades, {res['win_rate']*100:.1f}% win rate, {res['avg_r_multiple']:.2f}R avg")
     print()
     
-    if len(signals) == 0:
-        print("No signals generated. Try different data or parameters.")
-        return
+    # Use best timeframe for detailed output
+    best_tf = max(results_by_tf.keys(), key=lambda k: results_by_tf[k]['avg_r_multiple'])
+    results = results_by_tf[best_tf]
     
-    print("Step 7: Running options backtest with 2:1 R:R filter...")
-    backtest = Backtest(df_3min, signals)
-    results = backtest.run(max_bars_held=20)
-    
-    print(f"  ✓ Backtest complete")
-    print()
-    
+    print(f"BEST TIMEFRAME: {best_tf.upper()}")
     print("=" * 70)
-    print("PERFORMANCE SUMMARY")
-    print("=" * 70)
-    print()
-    print(f"Total Trades:        {results['total_trades']}")
-    print(f"Win Rate:            {results['win_rate']*100:.1f}%")
-    print(f"Average PnL:         ${results['avg_pnl']:.2f}")
-    print(f"Average R-Multiple:  {results['avg_r_multiple']:.2f}R")
-    print(f"Total PnL:           ${results['total_pnl']:.2f}")
-    print(f"Max Drawdown:        ${results['max_drawdown']:.2f}")
-    print()
     
     if results['total_trades'] > 0:
         print("Trade Details:")

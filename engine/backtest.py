@@ -5,6 +5,7 @@ Runs strategy signals through options execution and calculates performance.
 """
 
 from typing import List, Dict, Any, Optional
+from datetime import time
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
@@ -33,23 +34,24 @@ class TradeResult:
 class Backtest:
     """Backtest engine for options strategies."""
     
-    def __init__(self, df: pd.DataFrame, signals: List[Signal]):
+    def __init__(self, df: pd.DataFrame, min_rr_ratio: float = 1.6):
         """
         Initialize backtest.
         
         Args:
             df: Full market data DataFrame
-            signals: List of trading signals
+            min_rr_ratio: Minimum reward-to-risk ratio threshold (default: 1.6)
         """
         self.df = df
-        self.signals = signals
+        self.min_rr_ratio = min_rr_ratio
         self.trades: List[TradeResult] = []
         
-    def run(self, max_bars_held: int = 60) -> Dict[str, Any]:
+    def run(self, signals: List[Signal], max_bars_held: int = 60) -> Dict[str, Any]:
         """
         Run backtest on all signals.
         
         Args:
+            signals: List of trading signals
             max_bars_held: Maximum bars to hold position (default: 60 = 1 hour)
             
         Returns:
@@ -57,7 +59,7 @@ class Backtest:
         """
         self.trades = []
         
-        for signal in self.signals:
+        for signal in signals:
             trade_result = self._execute_signal(signal, max_bars_held)
             if trade_result:
                 self.trades.append(trade_result)
@@ -78,7 +80,9 @@ class Backtest:
         entry_idx = signal.index
         entry_time = signal.timestamp
         
-        expiry = entry_time + pd.Timedelta(days=7)
+        # Check EOD cutoff (stop trading by 3:55 PM to allow 20min before close)
+        if entry_time.time() >= time(15, 55):
+            return None  # Too close to market close
         
         strikes = generate_strikes(signal.spot, num_strikes=20, increment=1.0)
         
@@ -87,19 +91,19 @@ class Backtest:
             spot=signal.spot,
             target=signal.target,
             strikes=strikes,
-            expiry=expiry,
             entry_time=entry_time,
             mode="auto"
         )
         
         position.target = signal.target
         
+        # Calculate R:R with configurable threshold
         rr_ratio = calculate_rr_at_target(position, signal.target)
+        if rr_ratio < self.min_rr_ratio:
+            return None  # Filtered by R:R
         
-        if rr_ratio < 2.0:
-            return None
-        
-        eod_time = entry_time.replace(hour=16, minute=0, second=0, microsecond=0)
+        # Force exit by 3:55 PM (20 minutes before 4:15 PM close)
+        eod_time = entry_time.replace(hour=15, minute=55, second=0, microsecond=0)
         max_exit_time = entry_time + pd.Timedelta(minutes=max_bars_held)
         exit_cutoff = min(eod_time, max_exit_time)
         

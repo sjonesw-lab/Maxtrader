@@ -4,7 +4,7 @@ Tests for multi-timeframe regime context.
 
 import pandas as pd
 import pytest
-from engine.regime_context import build_regime_context, add_session_labels_to_3min
+from engine.regime_context import build_regime_context, add_session_labels_to_entry_tf
 
 
 def test_build_regime_context():
@@ -34,7 +34,7 @@ def test_build_regime_context():
     assert all(r in ['bull_trend', 'bear_trend', 'sideways'] for r in regimes)
 
 
-def test_add_session_labels_to_3min():
+def test_add_session_labels_to_entry_tf():
     """Test propagating session labels from 1-min to 3-min bars."""
     data_1min = {
         'timestamp': pd.date_range('2025-01-01 09:30', periods=30, freq='1min', tz='America/New_York'),
@@ -53,7 +53,7 @@ def test_add_session_labels_to_3min():
     }
     df_3min = pd.DataFrame(data_3min)
     
-    df_3min = add_session_labels_to_3min(df_1min, df_3min)
+    df_3min = add_session_labels_to_entry_tf(df_1min, df_3min)
     
     assert 'session' in df_3min.columns
     assert all(df_3min['session'] == 'NY')
