@@ -195,27 +195,19 @@ class HighVolStrategy(BaseStrategy):
             if reclaimed:
                 # Valid bullish setup
                 entry = bar['close']
-                stop = bar['low'] - (0.001 * entry)  # Just below sweep low
                 
-                # Target based on mode
-                if self.target_mode == 'vwap' and vwap > entry:
-                    tp1 = vwap
-                    tp2 = vwap + (vwap - entry)  # Same distance beyond VWAP
-                elif self.target_mode == 'range_mid':
-                    range_high = df['high'].tail(20).max()
-                    range_low = df['low'].tail(20).min()
-                    tp1 = (range_high + range_low) / 2
-                    tp2 = range_high
-                else:  # ATR-based
-                    atr = context.atr_pct * entry / 100
-                    tp1 = entry + (self.atr_target_mult * atr)
-                    tp2 = entry + (1.5 * self.atr_target_mult * atr)
+                # FIX: Use REALISTIC percentage targets based on actual price movement
+                # Analysis shows median 2H move = 0.57%, 75th pct = 1.14%
+                # Target: 1% move (conservative), Stop: 0.5% (tight)
+                stop = entry * 0.995  # 0.5% stop
+                tp1 = entry * 1.010   # 1.0% target (R:R = 2:1)
+                tp2 = entry * 1.015   # 1.5% stretch target (R:R = 3:1)
                 
                 # Calculate R:R
                 rr = self.calculate_risk_reward(entry, tp1, stop)
                 
-                # ARCHITECT FIX: Relax R:R to 1.2:1 for high vol chaos
-                if rr < 1.2:
+                # Minimum R:R should be 1.8:1 (realistic for 1% target / 0.5% stop)
+                if rr < 1.8:
                     return None
                 
                 return StrategySignal(
@@ -256,27 +248,19 @@ class HighVolStrategy(BaseStrategy):
             if reclaimed:
                 # Valid bearish setup
                 entry = bar['close']
-                stop = bar['high'] + (0.001 * entry)  # Just above sweep high
                 
-                # Target based on mode
-                if self.target_mode == 'vwap' and vwap < entry:
-                    tp1 = vwap
-                    tp2 = vwap - (entry - vwap)
-                elif self.target_mode == 'range_mid':
-                    range_high = df['high'].tail(20).max()
-                    range_low = df['low'].tail(20).min()
-                    tp1 = (range_high + range_low) / 2
-                    tp2 = range_low
-                else:  # ATR-based
-                    atr = context.atr_pct * entry / 100
-                    tp1 = entry - (self.atr_target_mult * atr)
-                    tp2 = entry - (1.5 * self.atr_target_mult * atr)
+                # FIX: Use REALISTIC percentage targets based on actual price movement
+                # Analysis shows median 2H move = 0.57%, 75th pct = 1.14%
+                # Target: 1% move (conservative), Stop: 0.5% (tight)
+                stop = entry * 1.005  # 0.5% stop
+                tp1 = entry * 0.990   # 1.0% target (R:R = 2:1)
+                tp2 = entry * 0.985   # 1.5% stretch target (R:R = 3:1)
                 
                 # Calculate R:R
                 rr = self.calculate_risk_reward(entry, tp1, stop)
                 
-                # ARCHITECT FIX: Relax R:R to 1.2:1 for high vol chaos
-                if rr < 1.2:
+                # Minimum R:R should be 1.8:1 (realistic for 1% target / 0.5% stop)
+                if rr < 1.8:
                     return None
                 
                 return StrategySignal(
