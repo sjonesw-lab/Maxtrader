@@ -86,24 +86,24 @@ class UltraLowVolStrategyV2(BaseStrategy):
         if len(df) < self.rolling_window + 10:
             return signals
         
-        # Calculate VWAP bands with adaptive threshold
-        vwap_data = self._calculate_vwap_bands_adaptive(df, context)
-        
-        if vwap_data['threshold'] == 0:
-            return signals
-        
         # Track last signal index for cooldown
         last_signal_idx = -100
         cooldown_bars = 100  # Designer target: 15-25 signals total, need 100 bars (~1.5 hours) cooldown
         
         # Scan entire dataframe for PA-confirmed setups
-        # Start from rolling_window to have enough history
+        # FIX (architect): Calculate VWAP bands ROLLING per bar, not once globally
         for idx in range(self.rolling_window, len(df)):
             # Cooldown check
             if idx - last_signal_idx < cooldown_bars:
                 continue
             
-            # Signal A: False break + reclaim (PRIORITY)
+            # Calculate VWAP bands for THIS bar (rolling window)
+            vwap_data = self._calculate_vwap_bands_adaptive_rolling(df, idx, context)
+            
+            if vwap_data['threshold'] == 0:
+                continue
+            
+            # Signal A: False break + reclaim (PRIORITY, REQUIRED)
             signal_a = self._check_false_break_reclaim(
                 df, idx, vwap_data, context
             )
@@ -112,7 +112,7 @@ class UltraLowVolStrategyV2(BaseStrategy):
                 last_signal_idx = idx
                 continue  # One signal per bar
             
-            # Signal B: Exhaustion wick (SECONDARY)
+            # Signal B: Exhaustion wick (SECONDARY, STRICTER)
             signal_b = self._check_exhaustion_wick(
                 df, idx, vwap_data, context
             )
@@ -131,31 +131,39 @@ class UltraLowVolStrategyV2(BaseStrategy):
         
         return unique_signals
     
-    def _calculate_vwap_bands_adaptive(
+    def _calculate_vwap_bands_adaptive_rolling(
         self,
         df: pd.DataFrame,
+        idx: int,
         context: MarketContext
     ) -> dict:
         """
-        Calculate VWAP + adaptive bands per designer spec.
+        Calculate VWAP + adaptive bands per designer spec - ROLLING VERSION.
+        
+        FIX (architect): ATR must be rolling per window, not global.
+        Each bar calculates its own local ATR and std dev.
         
         Designer formula:
         atr_threshold   = 0.5 * atr_value
         sigma_threshold = 1.0 * std_value
         threshold       = max(min_tick * 2, min(atr_threshold, sigma_threshold))
         
-        Use tighter of ATR or sigma to prevent unreachable bands.
-        
+        Args:
+            df: Full dataframe
+            idx: Current bar index
+            context: Market context
+            
         Returns:
             dict with vwap, threshold, upper_band, lower_band
         """
-        # Use rolling window (last N bars)
-        window_df = df.tail(min(self.rolling_window, len(df)))
+        # Use rolling window ENDING at current bar
+        start_idx = max(0, idx - self.rolling_window + 1)
+        window_df = df.iloc[start_idx:idx+1]
         
         if len(window_df) < 20:
             return {'vwap': 0, 'threshold': 0, 'upper_band': 0, 'lower_band': 0}
         
-        # Calculate VWAP
+        # Calculate VWAP over window
         typical_price = (window_df['high'] + window_df['low'] + window_df['close']) / 3
         
         if window_df['volume'].sum() == 0:
@@ -163,12 +171,12 @@ class UltraLowVolStrategyV2(BaseStrategy):
         else:
             vwap = (typical_price * window_df['volume']).sum() / window_df['volume'].sum()
         
-        # Calculate std dev of price vs VWAP
+        # Calculate std dev of price vs VWAP (ROLLING)
         price_dev = typical_price - vwap
         std = price_dev.std()
         
-        # Calculate ATR
-        atr = calculate_atr(df, period=14)
+        # Calculate ATR over window (ROLLING, not global)
+        atr = calculate_atr(window_df, period=min(14, len(window_df)))
         
         # DESIGNER SPEC: Adaptive threshold
         atr_threshold = self.atr_mult * atr  # 0.5 * ATR
@@ -198,7 +206,7 @@ class UltraLowVolStrategyV2(BaseStrategy):
         context: MarketContext
     ) -> Optional[StrategySignal]:
         """
-        Signal A: False break + reclaim (PRIMARY SETUP)
+        Signal A: False break + reclaim (REQUIRED PATTERN)
         
         Designer spec:
         if price < vwap - threshold:
@@ -207,12 +215,12 @@ class UltraLowVolStrategyV2(BaseStrategy):
             ensure next candle does NOT make a lower low
             → long entry toward VWAP
         
-        This ensures we're NOT fading into real trend continuation.
+        FIX (architect): Look back to find deviation, check if THIS bar reclaims.
         
         Args:
             df: 1-minute data
             idx: Current bar index
-            vwap_data: VWAP + bands
+            vwap_data: VWAP + bands (rolling)
             context: Market context
             
         Returns:
@@ -220,54 +228,53 @@ class UltraLowVolStrategyV2(BaseStrategy):
         """
         bar = df.iloc[idx]
         vwap = vwap_data['vwap']
-        threshold = vwap_data['threshold']
         lower_band = vwap_data['lower_band']
         upper_band = vwap_data['upper_band']
         
-        # LONG SETUP: Price deviated below lower band
-        if bar['close'] < lower_band:
-            # Check if PREVIOUS bars had the deviation
-            # and THIS bar is the reclaim
-            if idx > 0:
-                prev_bar = df.iloc[idx - 1]
-                
-                # Prev bar was below threshold
-                if prev_bar['low'] < lower_band:
-                    # Current bar CLOSES back above threshold
-                    if bar['close'] > lower_band:
-                        # Ensure not making new lows (failure confirmed)
-                        if bar['low'] > prev_bar['low']:
-                            # Check next few bars don't make lower low
-                            reclaim_confirmed = self._confirm_reclaim_long(
-                                df, idx, lower_band
+        # LONG SETUP: Look for deviation in previous 1-5 bars
+        lookback = min(5, idx)
+        for i in range(1, lookback + 1):
+            prev_bar = df.iloc[idx - i]
+            
+            # Found a deviation below lower band
+            if prev_bar['low'] < lower_band:
+                # Current bar RECLAIMS above lower band
+                if bar['close'] > lower_band:
+                    # Ensure current bar didn't make new low (failure)
+                    if bar['low'] > prev_bar['low']:
+                        # Confirm next bars don't continue down
+                        reclaim_confirmed = self._confirm_reclaim_long(
+                            df, idx, bar['low']
+                        )
+                        
+                        if reclaim_confirmed:
+                            return self._create_long_signal(
+                                df, idx, bar, vwap_data, context,
+                                setup_type='false_break_reclaim_long'
                             )
-                            
-                            if reclaim_confirmed:
-                                return self._create_long_signal(
-                                    df, idx, bar, vwap_data, context,
-                                    setup_type='false_break_reclaim_long'
-                                )
+                # If still below, keep looking
+                continue
         
-        # SHORT SETUP: Price deviated above upper band
-        elif bar['close'] > upper_band:
-            if idx > 0:
-                prev_bar = df.iloc[idx - 1]
-                
-                # Prev bar was above threshold
-                if prev_bar['high'] > upper_band:
-                    # Current bar CLOSES back below threshold
-                    if bar['close'] < upper_band:
-                        # Ensure not making new highs
-                        if bar['high'] < prev_bar['high']:
-                            reclaim_confirmed = self._confirm_reclaim_short(
-                                df, idx, upper_band
+        # SHORT SETUP: Look for deviation in previous 1-5 bars
+        for i in range(1, lookback + 1):
+            prev_bar = df.iloc[idx - i]
+            
+            # Found a deviation above upper band
+            if prev_bar['high'] > upper_band:
+                # Current bar RECLAIMS below upper band
+                if bar['close'] < upper_band:
+                    # Ensure current bar didn't make new high
+                    if bar['high'] < prev_bar['high']:
+                        reclaim_confirmed = self._confirm_reclaim_short(
+                            df, idx, bar['high']
+                        )
+                        
+                        if reclaim_confirmed:
+                            return self._create_short_signal(
+                                df, idx, bar, vwap_data, context,
+                                setup_type='false_break_reclaim_short'
                             )
-                            
-                            if reclaim_confirmed:
-                                return self._create_short_signal(
-                                    df, idx, bar, vwap_data, context,
-                                    setup_type='false_break_reclaim_short'
-                                )
+                continue
         
         return None
     
@@ -301,34 +308,31 @@ class UltraLowVolStrategyV2(BaseStrategy):
         lower_band = vwap_data['lower_band']
         upper_band = vwap_data['upper_band']
         
-        # LONG SETUP: Wick below band, close back above (DESIGNER SPEC)
+        # LONG SETUP: Wick below band, RECLAIM above band (ARCHITECT FIX)
         if bar['low'] < lower_band:
-            # Designer: "close back above (low + body_midpoint)"
-            # This means wick shows rejection at band
+            # Wick rejection at band
             lower_wick = min(bar['open'], bar['close']) - bar['low']
             body = abs(bar['close'] - bar['open'])
-            body_midpoint = (bar['open'] + bar['close']) / 2
             
-            # Wick must be significant (rejection)
-            if lower_wick > body * 1.5:
-                # Close above midpoint of range (low to high)
-                range_midpoint = (bar['low'] + bar['high']) / 2
-                if bar['close'] > range_midpoint:
+            # ARCHITECT: Require reclaim THROUGH band (not just midpoint)
+            # This tightens criteria and ensures true rejection
+            if lower_wick > body * 2.0:  # Stronger wick requirement
+                # Close must be ABOVE lower band (reclaimed)
+                if bar['close'] > lower_band:
                     return self._create_long_signal(
                         df, idx, bar, vwap_data, context,
                         setup_type='exhaustion_wick_long'
                     )
         
-        # SHORT SETUP: Wick above band, close back below (DESIGNER SPEC)
+        # SHORT SETUP: Wick above band, RECLAIM below band (ARCHITECT FIX)
         elif bar['high'] > upper_band:
             upper_wick = bar['high'] - max(bar['open'], bar['close'])
             body = abs(bar['close'] - bar['open'])
             
-            # Wick must be significant
-            if upper_wick > body * 1.5:
-                # Close below midpoint of range
-                range_midpoint = (bar['low'] + bar['high']) / 2
-                if bar['close'] < range_midpoint:
+            # ARCHITECT: Require reclaim THROUGH band
+            if upper_wick > body * 2.0:  # Stronger wick requirement
+                # Close must be BELOW upper band (reclaimed)
+                if bar['close'] < upper_band:
                     return self._create_short_signal(
                         df, idx, bar, vwap_data, context,
                         setup_type='exhaustion_wick_short'
