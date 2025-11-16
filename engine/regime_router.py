@@ -68,21 +68,27 @@ class RegimeRouter:
         
         Rules:
         1. VIX >30 → HIGH_VOL
-        2. VIX <13 OR ATR <0.5% → ULTRA_LOW_VOL
-        3. Otherwise → NORMAL_VOL
+        2. VIX <8 OR ATR <0.05% → EXTREME_CALM_PAUSE (no trading)
+        3. VIX 8-13 OR ATR 0.05-0.5% → ULTRA_LOW_VOL  
+        4. Otherwise → NORMAL_VOL
         
         Args:
             vix: VIX value
             atr_pct: ATR as percentage of price
             
         Returns:
-            'HIGH_VOL', 'ULTRA_LOW_VOL', or 'NORMAL_VOL'
+            'HIGH_VOL', 'EXTREME_CALM_PAUSE', 'ULTRA_LOW_VOL', or 'NORMAL_VOL'
         """
         # High volatility (crashes, extreme moves)
         if vix > self.vix_high:
             return 'HIGH_VOL'
         
-        # Ultra-low volatility (dead calm, grind)
+        # Extreme calm (VIX <8 or ATR <0.05%) - PAUSE TRADING
+        # Per architect: Too calm for mean-reversion edge, stand down
+        if vix < 8.0 or atr_pct < 0.05:
+            return 'EXTREME_CALM_PAUSE'
+        
+        # Ultra-low volatility (VIX 8-13, ATR 0.05-0.5%)
         if vix < self.vix_low or atr_pct < self.atr_low:
             return 'ULTRA_LOW_VOL'
         
@@ -93,7 +99,7 @@ class RegimeRouter:
         self,
         context: MarketContext,
         regime: Optional[str] = None
-    ) -> Tuple[BaseStrategy, str]:
+    ) -> Tuple[Optional[BaseStrategy], str]:
         """
         Route to appropriate strategy based on regime.
         
@@ -102,12 +108,14 @@ class RegimeRouter:
             regime: Override regime detection (optional)
             
         Returns:
-            (strategy, regime_name)
+            (strategy, regime_name) or (None, 'EXTREME_CALM_PAUSE')
         """
         if regime is None:
             regime = self.detect_regime(context.vix, context.atr_pct)
         
-        if regime == 'HIGH_VOL':
+        if regime == 'EXTREME_CALM_PAUSE':
+            return None, regime  # No trading in extreme calm
+        elif regime == 'HIGH_VOL':
             return self.high_vol, regime
         elif regime == 'ULTRA_LOW_VOL':
             return self.ultra_low_vol, regime
@@ -122,6 +130,8 @@ class RegimeRouter:
         """
         Generate signals using regime-appropriate strategy.
         
+        Returns empty list if regime is EXTREME_CALM_PAUSE.
+        
         Args:
             context: Market context
             regime_override: Force specific regime (optional)
@@ -133,6 +143,10 @@ class RegimeRouter:
         
         # Update context regime
         context.regime = regime
+        
+        # EXTREME_CALM_PAUSE: Return empty list (no trading)
+        if strategy is None:
+            return []
         
         # Generate signals
         signals = strategy.generate_signals(context)

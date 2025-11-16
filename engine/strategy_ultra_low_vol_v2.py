@@ -87,8 +87,9 @@ class UltraLowVolStrategyV2(BaseStrategy):
             return signals
         
         # Track last signal index for cooldown
+        # ADJUSTED: In extreme low vol (VIX <8), need shorter cooldown
         last_signal_idx = -100
-        cooldown_bars = 100  # Designer target: 15-25 signals total, need 100 bars (~1.5 hours) cooldown
+        cooldown_bars = 30  # Reduced from 100 for extreme low vol environments
         
         # Scan entire dataframe for PA-confirmed setups
         # FIX (architect): Calculate VWAP bands ROLLING per bar, not once globally
@@ -314,9 +315,9 @@ class UltraLowVolStrategyV2(BaseStrategy):
             lower_wick = min(bar['open'], bar['close']) - bar['low']
             body = abs(bar['close'] - bar['open'])
             
-            # ARCHITECT: Require reclaim THROUGH band (not just midpoint)
-            # This tightens criteria and ensures true rejection
-            if lower_wick > body * 2.0:  # Stronger wick requirement
+            # ADJUSTED: In extreme low vol, wicks are tiny
+            # Reduce from 2.0× to 1.0× body to catch small rejections
+            if lower_wick > max(body * 1.0, 0.001):  # At least 1×body or $0.001
                 # Close must be ABOVE lower band (reclaimed)
                 if bar['close'] > lower_band:
                     return self._create_long_signal(
@@ -329,8 +330,8 @@ class UltraLowVolStrategyV2(BaseStrategy):
             upper_wick = bar['high'] - max(bar['open'], bar['close'])
             body = abs(bar['close'] - bar['open'])
             
-            # ARCHITECT: Require reclaim THROUGH band
-            if upper_wick > body * 2.0:  # Stronger wick requirement
+            # ADJUSTED: In extreme low vol, wicks are tiny
+            if upper_wick > max(body * 1.0, 0.001):  # At least 1×body or $0.001
                 # Close must be BELOW upper band (reclaimed)
                 if bar['close'] < upper_band:
                     return self._create_short_signal(
