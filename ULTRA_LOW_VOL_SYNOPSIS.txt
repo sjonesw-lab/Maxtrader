@@ -1,0 +1,157 @@
+================================================================================
+ULTRA-LOW VOL STRATEGY - TECHNICAL ISSUE & PROPOSED FIXES
+================================================================================
+Date: November 16, 2025
+Project: MaxTrader v4 Multi-Regime System
+
+STATUS: Strategy generating zero signals on Dec 2024 low-vol sample
+
+================================================================================
+ROOT CAUSES
+================================================================================
+
+1. VWAP BANDS TOO WIDE
+   - Using ±1.5σ on 100-bar window
+   - In dead calm markets (ATR 0.03%), sigma is tiny → bands too wide for 
+     price to reach
+   - Price rarely deviates enough to trigger entry
+
+2. RANGE DETECTION TOO STRICT
+   - Requires 0.2% minimum intraday range
+   - Ultra-low vol ranges often 0.15-0.25%
+   - If below threshold, no signals generated all day
+
+3. SETUP LOGIC TOO CONSERVATIVE
+   - All three setups require: proximity + sweep + reclaim
+   - In low vol, moves are smooth/slow → few clean "sweeps"
+   - Filters stacking = zero passing signals
+
+================================================================================
+PROPOSED FIXES
+================================================================================
+
+FIX 1 - ADAPTIVE VWAP BANDS:
+--------------------------------------
+# Use ATR-based OR sigma threshold, whichever is tighter
+atr_threshold = 0.5 * atr
+sigma_threshold = 1.0 * std  # Reduced from 1.5σ
+threshold = min(atr_threshold, sigma_threshold)
+
+RATIONALE: Prevents bands from being unreachably wide in low vol
+
+
+FIX 2 - RELAX RANGE REQUIREMENTS:
+--------------------------------------
+min_range = max(0.001, atr_pct * 0.5)  # 0.1% or 50% of ATR
+n_bars = min(30, len(df))  # Reduced from 60 bars
+
+RATIONALE: Handles partial days and tighter ranges typical of low vol
+
+
+FIX 3 - ADD SIMPLER SETUPS:
+--------------------------------------
+# Simple VWAP crosses (no sweep required)
+if prev_close < vwap and curr_close > vwap:
+    long_signal()
+    
+# Range proximity fades (no sweep required)  
+if price < range_low * 1.001:
+    fade_long_to_mid()
+
+RATIONALE: Low vol has smooth moves, not aggressive sweeps
+
+
+FIX 4 - LOWER R:R THRESHOLD:
+--------------------------------------
+min_rr = 0.8  # Reduced from 1.0
+
+RATIONALE: Accept smaller moves typical of grinding markets
+
+================================================================================
+TESTING PLAN
+================================================================================
+
+PHASE 1 (15 min):
+  1. Implement Fix 1 + Fix 2 + Fix 4
+  2. Test on Dec 2024 sample
+  3. Target: 5-10 signals
+
+PHASE 2 (15 min):
+  4. If still zero, add Fix 3 (VWAP crosses)
+  5. Test again
+  6. Target: 15-25 signals
+
+PHASE 3 (30-60 min):
+  7. Run full Dec 2024 backtest
+  8. Validate: 60%+ WR, 0.3R+ expectancy, max 3 consecutive losses
+  9. If fails: Skip Ultra-Low Vol regime
+
+================================================================================
+ALTERNATIVE APPROACH
+================================================================================
+
+SKIP ULTRA-LOW VOL ENTIRELY:
+  - Deploy with Normal Vol (validated) + High Vol (ready) only
+  - Pause all trading when VIX <13 or ATR <0.5%
+  - Rationale: Better to sit out than force trades in unfavorable conditions
+  - Add Ultra-Low Vol in future update if market conditions warrant
+
+TRADE-OFFS:
+  Pro: Deploy faster, avoid low-quality signals
+  Con: Miss potential opportunities in grinding markets
+
+================================================================================
+RECOMMENDATION
+================================================================================
+
+Timeline: 30-45 minutes to exhaustive tuning
+
+Approach:
+  1. Try Fix 1 + 2 + 4 first (adaptive bands + relaxed thresholds)
+  2. If no signals, add Fix 3 (simpler setups)
+  3. If still zero signals after all fixes → skip this regime
+
+================================================================================
+BOTTOM LINE
+================================================================================
+
+Ultra-Low Vol strategy filters are calibrated for normal volatility, not 
+dead calm. Need 30-50% threshold relaxation to match the environment, or 
+accept that some regimes are better avoided than forced.
+
+Current filters designed for:
+  - VIX 13-25, ATR 0.5-1.5%
+  
+Actual Dec 2024 conditions:
+  - VIX <13, ATR 0.03%
+  
+Gap = 10x difference in volatility → filters need recalibration
+
+================================================================================
+TECHNICAL DETAILS
+================================================================================
+
+Current Implementation:
+  File: engine/strategy_ultra_low_vol.py
+  
+  Three setup types:
+    1. _check_vwap_fade() - VWAP ±1.5σ extremes
+    2. _check_range_fade() - Range edge sweeps
+    3. _check_grind_pullback() - Trend + VWAP touch
+    
+  All require:
+    - Sweep detection (wick violation + close reclaim)
+    - Min R:R 1.0:1
+    - Range >0.2% daily
+    
+Problem: In 0.03% ATR environment, these thresholds eliminate all trades
+
+Proposed Changes:
+  - Sigma: 1.5σ → 1.0σ or ATR-based (whichever tighter)
+  - Range: 0.2% → 0.1% or 50% of ATR
+  - R:R: 1.0 → 0.8
+  - Add: Simple crosses without sweep requirement
+
+================================================================================
+END OF SYNOPSIS
+================================================================================
