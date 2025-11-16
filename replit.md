@@ -4,13 +4,20 @@
 
 MaxTrader is an **intraday NASDAQ trading research engine** built on a wave-based Renko framework with multi-timeframe confluence analysis. The system generates quality-driven trading signals by detecting wave impulses, analyzing retracement patterns, and combining daily/4H market context. All trades execute using options structures for defined risk.
 
-**Current Status (as of Nov 15, 2025):**
-- **Win Rate: 43.5%** (target: 60-70%)
-- **Profit Factor: 9.39** (target: >2 ✅)
-- **Trade Frequency: 23 trades/month** (quality-driven, no artificial cooldowns)
-- **Total PnL: $2,249** over 90 days (Aug 18 - Nov 14, 2025)
+**Current Status (as of Nov 16, 2025):**
 
-The engine uses a state-machine approach to detect 3+ brick wave impulses, cache completed waves, wait for genuine retracements (shallow 0-33% or healthy 33-62%), and signal when price enters optimal re-entry zones. ICT structures (sweeps, displacement, FVG, MSS, order blocks) have been implemented but are disabled by default as they degraded performance.
+**Phase 1: Multi-Regime System (In Progress)**
+- ✅ **Normal Vol (VIX 13-30):** Wave-Renko strategy working - 43.5% WR, 9.39 PF, $2,249 PnL
+- ✅ **Ultra-Low Vol (VIX 8-13):** PA-confirmed VWAP mean-reversion complete
+- ✅ **EXTREME_CALM_PAUSE (VIX <8):** Trading pause implemented and tested
+- ⏭️ **High Vol (VIX >30):** Deferred to Phase 2 (see HIGH_VOL_DECISION.md)
+- ⏭️ **Runtime Safety Layer:** Next implementation priority
+
+**Normal Vol Strategy (Validated):**
+- Win Rate: 43.5%, Profit Factor: 9.39
+- Trade Frequency: 23/month (quality-driven)
+- Total PnL: $2,249 over 90 days (Aug 18 - Nov 14, 2025)
+- Uses wave-based Renko + regime filtering (ICT structures disabled)
 
 ## User Preferences
 
@@ -59,16 +66,25 @@ Preferred communication style: Simple, everyday language.
 
 **Trend Strength Calculation**: Computes rolling trend strength by analyzing the proportion of consecutive same-direction bricks over a lookback window, providing a smoothed measure of trend momentum.
 
-### Regime Detection
+### Regime Detection & Routing
 
-**Market Classification**: Categorizes market conditions into three regimes:
-- **Bull Trend**: Sustained upward Renko trend (trend strength > 0.6) with positive price slope
-- **Bear Trend**: Sustained downward Renko trend (trend strength < -0.6) with negative price slope  
-- **Sideways**: Mixed Renko directions or weak trend strength, indicating consolidation or choppy conditions
+**Multi-Regime Architecture (NEW)**: System now supports 4 distinct market regimes with dedicated strategies:
 
-**Regime-Based Signal Filtering**: Acts as an additional signal filter layered on top of ICT structure confluence. Long signals are permitted in bull_trend or sideways regimes; short signals in bear_trend or sideways regimes. This prevents counter-trend trades while still allowing range-bound opportunities.
+1. **NORMAL_VOL (VIX 13-30):** Wave-Renko strategy (validated, working)
+2. **ULTRA_LOW_VOL (VIX 8-13):** VWAP mean-reversion (complete, needs live tuning)
+3. **EXTREME_CALM_PAUSE (VIX <8):** Trading pause, capital preservation
+4. **HIGH_VOL (VIX >30):** Deferred to Phase 2 (0DTE incompatible with crash volatility)
 
-**No Look-Ahead Bias**: Regime classification uses only current and historical Renko data, ensuring no future information leaks into trading decisions.
+**RegimeRouter**: Central routing component that:
+- Calculates VIX proxy from daily price data
+- Calculates ATR percentage for volatility confirmation
+- Routes to appropriate strategy based on market conditions
+- Returns empty signals for EXTREME_CALM_PAUSE and HIGH_VOL regimes
+- Logs regime changes for monitoring
+
+**Regime-Based Signal Filtering (Legacy)**: Original Renko-based classification (bull_trend, bear_trend, sideways) still used within Normal Vol strategy for directional filtering.
+
+**No Look-Ahead Bias**: All regime detection uses only current and historical data.
 
 ### Options Engine
 
