@@ -1,0 +1,221 @@
+Here’s a prompt you can paste directly into Replit as the “build” instruction.
+
+⸻
+
+You are an experienced quant/algo engineer working in an existing MaxTrader repo.
+
+CONTEXT
+	•	This repo already contains a Normal Volatility strategy that:
+	•	Uses ATR-based Renko bricks and wave logic,
+	•	Uses a Confluence engine,
+	•	Uses an Options Allocator and Risk Manager,
+	•	Has been backtested on QQQ 1m data (Polygon) across multiple windows.
+	•	The Normal Vol strategy is good and should NOT be redesigned from scratch. It needs:
+	1.	A quick sanity check that it uses the correct confluence inputs (Daily + 4H, not just 4H),
+	2.	Validation that it still reproduces the known baseline performance.
+	•	We now want to:
+	1.	Confirm/adjust the Normal Vol implementation,
+	2.	Implement a clean regime router (Normal / High Vol / Ultra-Low Vol),
+	3.	Implement a price-action-based Ultra-Low Vol strategy (VWAP Bollinger mean reversion) that does NOT trade on naive 2σ touches, but only on validated PA signals (false breaks, reclaim, structural flips, etc.).
+
+HIGH-LEVEL REQUIREMENTS
+
+1. Volatility Regimes
+
+Implement a simple volatility regime classifier:
+
+class Regime:
+    NORMAL    = "normal"
+    HIGH_VOL  = "high_vol"
+    ULTRA_LOW = "ultra_low"
+
+Detection logic:
+
+def detect_regime(vix_value: float, atr_pct: float) -> str:
+    if vix_value < 13 or atr_pct < 0.5:
+        return Regime.ULTRA_LOW
+    elif vix_value > 30:
+        return Regime.HIGH_VOL
+    else:
+        return Regime.NORMAL
+
+Use this in a StrategyRouter that calls:
+	•	normal_strategy in NORMAL regime (existing system),
+	•	high_vol_strategy in HIGH_VOL regime (can be a stub/scaffold for now),
+	•	ultra_low_strategy in ULTRA_LOW regime (we need to design & implement this properly for low VIX).
+
+2. Confirm Normal Vol Strategy (Existing Code)
+
+Locate the current Normal Vol strategy + Confluence engine (likely in or around the existing live observer and “maxtrader v3” logic).
+
+Tasks:
+	1.	Confirm confluence inputs:
+	•	Verify whether ConfluenceEngine (or equivalent) currently uses:
+	•	Daily + 4H data, or
+	•	Only 4H.
+	•	The best-performing design used BOTH Daily and 4H. If it currently uses 4H only, extend it to include:
+	•	Daily slope over last 5 bars:
+
+slope = (close[-1] - close[-5]) / close[-5]
+slope_scaled = tanh(abs(slope)/0.02)
+
+
+	•	4H VWAP position and value/POC tags.
+	•	Confidence score:
+
+conf = 0.4 + 0.4 * slope_scaled
+# plus small bonuses for VWAP and POC alignment
+conf = max(0.0, min(1.0, conf))
+
+
+	•	Please respond back in comments or logs confirming whether you changed anything or if it was already using both timeframes.
+
+	2.	Confirm live is tick-first:
+	•	In live mode, Renko bricks should be built from ticks → 1m bars → Renko, not just from OHLC bar closes.
+	•	Ensure the websocket on_message handler:
+	•	Only parses Alapca T:'t' trade messages and enqueues them,
+	•	Heavy processing (bar building, Renko, strategies) happens in a worker / processing pipeline, not on the websocket thread.
+	3.	Re-run QQQ baseline test (Aug 18 – Nov 14, 2025, 1m data, NORMAL regime) and check that results are still approximately:
+	•	~23 trades,
+	•	~95% win rate,
+	•	~$3,200 PnL,
+	•	Max DD ~ $375 (2–3% risk per trade scale).
+
+These numbers are regression + acceptance targets for NormalVolStrategy.
+
+3. Ultra-Low Vol Strategy — VWAP Bollinger, BUT PA-Confirmed (NOT “touch = entry”)
+
+Now design and implement an Ultra-Low Vol strategy for Regime.ULTRA_LOW that does NOT blindly fade 2σ touches. Instead:
+
+3.1 Core Concepts
+	•	Environment: VIX < 13 or ATR% < 0.5%
+	•	Market behavior: slow grind, limited range, VWAP-centered action.
+	•	Goal: mean reversion around VWAP using VWAP-anchored Bollinger bands with price action confirmation.
+
+3.2 VWAP-BB Definition
+	•	Use VWAP as the mean for intraday.
+	•	Define bands: VWAP ± k·σ, where σ is std dev of price relative to VWAP over a rolling window (e.g., 20–50 bars).
+	•	In ultra-low vol, adapt band width:
+
+atr = ATR(14) in % of price (atr_pct)
+std = rolling std dev vs VWAP
+
+atr_threshold   = 0.5 * atr_value     # half ATR distance
+sigma_threshold = 1.0 * std_value     # tighter than 1.5σ
+threshold       = max(min_tick * 2, min(atr_threshold, sigma_threshold))
+
+Use threshold as the distance from VWAP to define “extreme.”
+
+3.3 Valid Entry = Deviation + Failure + Reclaim
+We explicitly do NOT want “price hits 2σ, fade.”
+
+We only enter when the deviation:
+	1.	Occurs (price goes beyond threshold),
+	2.	Fails, and
+	3.	Price reclaims a meaningful level.
+
+Concretely, basic long setup in ultra-low vol:
+
+Signal A – False Break + Reclaim
+
+# pseudo logic
+if price < vwap - threshold:
+    # deviation occurred
+    wait for candle that CLOSES back above vwap - threshold
+    ensure next candle does NOT make a lower low
+    → long entry toward VWAP
+
+Short is the mirror above VWAP.
+
+Signal B – Exhaustion Wick at Bands
+
+if candle_low < vwap - threshold and close back above (low + body_midpoint):
+    # Long wick, rejection at band
+    → long entry
+
+Signal C – Microstructure Flip (BOS after deviation)
+
+# after deviation below band
+if short-term swing high is broken (micro BOS / MSB) and price holds above that
+    → confirms fade; long
+
+You don’t need all three signals in v1, but you must have at least A (false break + reclaim), ideally also consider B (exhaustion wick). These are what keep you from fading into real trend acceleration.
+
+3.4 Range & R:R in Ultra-Low Vol
+Given ultra-low ATR and VIX:
+	•	Accept smaller moves:
+	•	min_rr can be ~0.8 instead of ≥1.0.
+	•	Targets:
+	•	Conservative: half-way back to VWAP.
+	•	Full: VWAP itself.
+
+Stop:
+	•	Slightly beyond deviation (e.g., price moving even further from bands in subsequent candle).
+
+3.5 Implementation Expectations
+	•	Implement UltraLowVolStrategy in e.g. strategy_ultra_low_vol.py (or similar).
+	•	It should:
+	•	Use VWAP + bands,
+	•	Use deviation + failure + reclaim logic for entry,
+	•	Be limited to low VIX / ATR.
+	•	Don’t overfit: use simple, explainable rules:
+	•	Deviation beyond band,
+	•	Confirmed failure (reclaim or wick),
+	•	Target toward VWAP.
+
+3.6 Tuning / Test Expectations
+On the Dec 2, 2024 – Feb 28, 2025 QQQ window (ultra-low vol):
+	•	Expectation for a working Ultra-Low Vol strategy:
+	•	~15–25 trades,
+	•	~60%+ win rate,
+	•	~0.3R+ expectancy,
+	•	Reasonable drawdown (no insane streaks).
+
+If, after applying reasonable tuning (e.g., your own adaptive thresholding + above PA rules), the UltraLowVol strategy still cannot produce sane behavior, it is acceptable to:
+	•	Treat Ultra-Low Vol as a no-trade regime:
+	•	i.e., if Regime.ULTRA_LOW, simply skip all trading.
+
+Just don’t “force” low-vol trades with poor edge.
+
+4. HighVolStrategy – Scaffold Only (VIX > 30)
+
+For now, we only need a lightweight scaffold for the high-vol regime:
+	•	Detect major liquidity levels (prior day H/L, session H/L, key swings).
+	•	Allow only few trades, with tiny risk per trade (0.5–1%).
+	•	Core pattern:
+	•	Price sweeps a major high/low,
+	•	Prints strong wick,
+	•	Closes back inside range (reclaim),
+	•	Optionally retests a nearby FVG/IFVG,
+	•	Then enter in the opposite direction for a mean-reversion move.
+
+Implementation can be simple; key is that the architecture allows HighVolStrategy to be plugged in behind the router.
+
+⸻
+
+8. Summary of What You Must Do
+	1.	Normal Vol:
+	•	Confirm confluence uses Daily + 4H, not only 4H.
+	•	Confirm Renko + exits logic is intact.
+	•	Re-run baseline backtest and check metrics are within ~±10% of known values.
+	2.	Regime Router:
+	•	Implement Regime and detect_regime based on VIX + ATR%.
+	•	Add a router that calls:
+	•	NormalVolStrategy in NORMAL,
+	•	HighVolStrategy in HIGH_VOL,
+	•	UltraLowVolStrategy in ULTRA_LOW.
+	3.	Ultra-Low Vol Strategy:
+	•	Implement a VWAP Bollinger mean-reversion system that:
+	•	Uses VWAP bands,
+	•	Enters only on price-action-confirmed mean-reversions (false breaks + reclaim, etc.),
+	•	Uses smaller R:R and targets appropriate for low vol,
+	•	Generates a reasonable number of signals in Dec 2024 without curve-fitting.
+	4.	Tick-first live mode:
+	•	Ensure live Renko and strategy are driven by ticks, not pre-aggregated bars.
+
+Please comment in the code or in logs:
+	•	Whether confluence is now Daily+4H,
+	•	That UltraLowVolStrategy uses PA-confirmed mean-reversion, not just band touches,
+	•	That live trading is tick-first.
+
+This is Option B: you keep your existing Normal Vol engine, but make it regime-aware, confirm confluence inputs, and add a robust, price-action-based Ultra-Low Vol strategy.
