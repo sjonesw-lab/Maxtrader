@@ -29,8 +29,15 @@ print("="*70)
 # Load COVID crash data
 print("\nStep 1: Loading COVID crash data...")
 provider = CSVDataProvider('data/QQQ_1m_covid_2020.csv')
-df_1min = provider.load_bars()
-print(f"  ✓ Loaded {len(df_1min)} bars")
+df_full = provider.load_bars()
+
+# Filter to HIGH VOL period only (March-April 2020, VIX >30)
+df_1min = df_full[
+    (df_full['timestamp'] >= '2020-03-01') &
+    (df_full['timestamp'] < '2020-05-01')
+].copy().reset_index(drop=True)
+
+print(f"  ✓ Loaded {len(df_1min)} bars (March-April 2020 only)")
 print(f"  ✓ Price range: ${df_1min['low'].min():.2f} - ${df_1min['high'].max():.2f}")
 print(f"  ✓ Date range: {df_1min['timestamp'].min()} to {df_1min['timestamp'].max()}")
 
@@ -135,7 +142,7 @@ print(f"VIX Proxy: {vix_proxy:.1f}")
 print()
 print(f"Total Trades: {results['total_trades']}")
 print(f"Win Rate: {results['win_rate']*100:.1f}%")
-print(f"Avg R-multiple: {results['avg_r']:.2f}R")
+print(f"Avg R-multiple: {results['avg_r_multiple']:.2f}R")
 print(f"Total Return: ${results['total_pnl']:.2f}")
 print(f"Max Drawdown: {results['max_drawdown']*100:.1f}%")
 print()
@@ -146,7 +153,7 @@ print("-" * 70)
 targets = {
     'Win Rate': (results['win_rate'], 0.85, '≥85%'),
     'Max DD': (results['max_drawdown'], 0.02, '<2%'),
-    'Avg R': (results['avg_r'], 1.5, '≥1.5R')
+    'Avg R': (results['avg_r_multiple'], 1.5, '≥1.5R')
 }
 
 all_passed = True
