@@ -38,7 +38,7 @@ The **Multi-Regime Architecture** supports four market regimes: `NORMAL_VOL` (VI
 
 ### Options Engine
 
-The `Options Engine` generates a grid of strikes, estimates option premiums using a simplified Black-Scholes model for backtesting, and automatically selects optimal options structures (long options, debit spreads, butterflies, broken-wing butterflies) based on risk-reward ratios. It simulates P&L over holding periods.
+The `Options Engine` generates a grid of strikes, estimates option premiums using a simplified Black-Scholes model for backtesting, and automatically selects optimal options structures based on risk-reward ratios. The engine evaluates **multiple strike prices** for long options (ATM, 1 OTM, 2 OTM, 3 OTM) and compares them against spread structures (debit spreads, butterflies, broken-wing butterflies), selecting whichever provides the best R:R ratio at the target price. This strike optimization ensures maximum leverage efficiency for each directional move.
 
 ### Strategy Layer
 

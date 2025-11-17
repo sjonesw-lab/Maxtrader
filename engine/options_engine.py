@@ -224,6 +224,47 @@ def choose_fly_strikes(
         return (far_wing, body_strike, near_wing)
 
 
+def build_long_option_at_strike(
+    direction: str,
+    spot: float,
+    strike: float,
+    entry_time: pd.Timestamp
+) -> OptionPosition:
+    """
+    Build long call or put at a specific strike.
+    
+    Args:
+        direction: 'long' or 'short'
+        spot: Current spot price
+        strike: Specific strike price
+        entry_time: Entry timestamp
+        
+    Returns:
+        OptionPosition
+    """
+    expiry = calculate_0dte_expiry(entry_time)
+    kind = 'call' if direction == 'long' else 'put'
+    
+    time_delta = expiry - entry_time
+    days_to_expiry = time_delta.total_seconds() / 86400.0
+    premium = estimate_option_premium(kind, strike, spot, days_to_expiry)
+    
+    option = Option(
+        kind=kind,
+        strike=strike,
+        expiry=expiry,
+        is_long=True,
+        quantity=1,
+        premium=premium
+    )
+    
+    return OptionPosition(
+        options=[option],
+        direction=direction,
+        entry_time=entry_time
+    )
+
+
 def build_long_option(
     direction: str,
     spot: float,
@@ -242,32 +283,8 @@ def build_long_option(
     Returns:
         OptionPosition
     """
-    # Use 0DTE expiry (4:15 PM same day)
-    expiry = calculate_0dte_expiry(entry_time)
-    
     atm_strike = find_nearest_strike(spot, strikes)
-    
-    kind = 'call' if direction == 'long' else 'put'
-    
-    # Calculate time to expiry in days (fractional for intraday)
-    time_delta = expiry - entry_time
-    days_to_expiry = time_delta.total_seconds() / 86400.0  # Convert to fractional days
-    premium = estimate_option_premium(kind, atm_strike, spot, days_to_expiry)
-    
-    option = Option(
-        kind=kind,
-        strike=atm_strike,
-        expiry=expiry,
-        is_long=True,
-        quantity=1,
-        premium=premium
-    )
-    
-    return OptionPosition(
-        options=[option],
-        direction=direction,
-        entry_time=entry_time
-    )
+    return build_long_option_at_strike(direction, spot, atm_strike, entry_time)
 
 
 def build_debit_spread(
@@ -504,10 +521,15 @@ def select_best_structure(
     - Max payoff near target
     - Risk-reward ratio
     
+    Enhanced strike selection:
+    - For long options, evaluates ATM, 1 OTM, 2 OTM, 3 OTM strikes
+    - Selects strike with best R:R ratio at target
+    
     Preference under 'auto' mode:
-    1. Broken-wing fly if target not too far and R:R attractive
-    2. Debit spread otherwise
-    3. Long option as fallback
+    1. Best long option (optimized strike)
+    2. Debit spread
+    3. Butterfly
+    4. Broken-wing butterfly
     
     Args:
         direction: 'long' or 'short'
@@ -521,12 +543,22 @@ def select_best_structure(
         Best OptionPosition
     """
     candidates = []
+    atm_strike = find_nearest_strike(spot, strikes)
     
-    long_opt = build_long_option(direction, spot, strikes, entry_time)
-    payoff_at_target = calculate_payoff_at_price(long_opt, target)
-    rr = payoff_at_target / abs(long_opt.entry_cost) if long_opt.entry_cost != 0 else 0
-    candidates.append(('long_option', long_opt, rr))
+    # Evaluate long options at multiple strikes (ATM, 1 OTM, 2 OTM, 3 OTM)
+    for otm_offset in [0, 1, 2, 3]:
+        if direction == 'long':
+            test_strike = atm_strike + otm_offset
+        else:
+            test_strike = atm_strike - otm_offset
+        
+        if test_strike in strikes:
+            long_opt = build_long_option_at_strike(direction, spot, test_strike, entry_time)
+            payoff_at_target = calculate_payoff_at_price(long_opt, target)
+            rr = payoff_at_target / abs(long_opt.entry_cost) if long_opt.entry_cost != 0 else 0
+            candidates.append((f'long_option_{otm_offset}otm', long_opt, rr))
     
+    # Evaluate spread structures
     spread = build_debit_spread(direction, spot, target, strikes, entry_time)
     payoff_at_target = calculate_payoff_at_price(spread, target)
     rr = payoff_at_target / abs(spread.entry_cost) if spread.entry_cost != 0 else 0
@@ -543,11 +575,14 @@ def select_best_structure(
     candidates.append(('broken_wing_fly', bwfly, rr))
     
     if mode == "auto":
+        # Sort by R:R ratio and return best
         candidates.sort(key=lambda x: x[2], reverse=True)
+        best_structure = candidates[0]
         
-        return candidates[0][1]
+        return best_structure[1]
     
-    return long_opt
+    # Fallback to ATM long option
+    return build_long_option(direction, spot, strikes, entry_time)
 
 
 def simulate_option_pnl_over_path(
