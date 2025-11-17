@@ -4,10 +4,15 @@ Tests across stocks (SPY, QQQ, IWM, DIA) and forex (EUR/USD, GBP/USD)
 """
 import pandas as pd
 import numpy as np
+import sys
+import os
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from engine.polygon_data_fetcher import PolygonDataFetcher
 from strategies.smartmoney_homma_mtf import SmartMoneyHommaMTF
 from engine.data_provider import CSVDataProvider
-import os
 
 
 def resample_to_timeframe(df_1m, timeframe):
@@ -26,7 +31,7 @@ def resample_to_timeframe(df_1m, timeframe):
     return resampled
 
 
-def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min'):
+def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min', min_impulse_pct=0.003, min_reward_risk=2.0):
     """
     Run backtest on a single instrument
     
@@ -35,6 +40,7 @@ def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min')
     """
     print(f"\n{'='*70}")
     print(f"Testing {instrument_name} (HTF={htf}, LTF={ltf})")
+    print(f"  Parameters: min_impulse={min_impulse_pct*100:.2f}%, min_R:R={min_reward_risk:.1f}")
     print(f"{'='*70}")
     
     # Resample to HTF and LTF
@@ -44,8 +50,11 @@ def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min')
     strategy = SmartMoneyHommaMTF(
         htf=htf,
         ltf=ltf,
-        min_reward_risk=2.0
+        min_reward_risk=min_reward_risk
     )
+    
+    # Apply relaxed impulse parameter
+    strategy.zone_detector.min_impulse_pct = min_impulse_pct
     
     signals = strategy.generate_signals(df_htf, df_ltf)
     
@@ -172,10 +181,17 @@ def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min')
 
 
 def main():
+    import sys
+    
+    # Parameter configuration (can be overridden via command line)
+    min_impulse_pct = float(sys.argv[1]) if len(sys.argv) > 1 else 0.002  # Default: 0.2% (relaxed)
+    min_reward_risk = float(sys.argv[2]) if len(sys.argv) > 2 else 1.5  # Default: 1.5 (relaxed)
+    
     print("="*90)
     print("MULTI-INSTRUMENT SMART MONEY + HOMMA MTF BACKTEST")
     print("Testing across stocks (SPY, QQQ, IWM, DIA) + forex (EUR/USD, GBP/USD)")
     print("Using REAL Polygon.io data")
+    print(f"Parameters: min_impulse={min_impulse_pct*100:.2f}%, min_R:R={min_reward_risk:.1f}")
     print("="*90)
     
     # Define instruments
@@ -222,7 +238,7 @@ def main():
                 fetcher.save_to_csv(df, csv_path)
             
             # Run backtest
-            result = run_single_instrument_backtest(df, instrument['name'])
+            result = run_single_instrument_backtest(df, instrument['name'], min_impulse_pct=min_impulse_pct, min_reward_risk=min_reward_risk)
             all_results.append(result)
             
         elif instrument['type'] == 'forex':
@@ -241,7 +257,7 @@ def main():
                 fetcher.save_to_csv(df, csv_path)
             
             # Run backtest
-            result = run_single_instrument_backtest(df, instrument['name'])
+            result = run_single_instrument_backtest(df, instrument['name'], min_impulse_pct=min_impulse_pct, min_reward_risk=min_reward_risk)
             all_results.append(result)
     
     # Aggregate statistics
