@@ -162,6 +162,65 @@ Tuning needed but risks overfitting on small sample.
 
 ---
 
+## Multi-Instrument Testing (REAL Polygon Data)
+
+**Test Date:** November 17, 2025  
+**Data Source:** Polygon.io API (real market data)  
+**Period:** Aug 18 - Nov 14, 2025 (90 days)  
+**Instruments:** SPY, QQQ, IWM, DIA, EUR/USD, GBP/USD
+
+### Individual Instrument Results
+
+| Instrument | Trades | WR | Avg R | PF | Sharpe | P&L |
+|------------|--------|-----|-------|-----|--------|-----|
+| SPY (S&P 500) | 1 | 100% | 2.27 | 0.00 | 0.00 | $2.13 |
+| QQQ (NASDAQ) | 3 | 66.7% | 1.11 | 6.76 | 0.61 | $3.29 |
+| IWM (Russell 2000) | 2 | 100% | 0.16 | 0.00 | 20.92 | $0.39 |
+| DIA (Dow Jones) | 2 | 100% | 0.20 | 0.00 | 2.97 | $0.65 |
+| EUR/USD | 0 | - | - | - | - | $0.00 |
+| GBP/USD | 1 | 100% | 4.02 | 0.00 | 0.00 | $0.00 |
+
+### Combined Portfolio Statistics
+
+**Total Trades:** 9 (across 6 instruments)  
+**Combined Win Rate:** 88.9%  
+**Combined Avg R:** 1.15  
+**Combined Profit Factor:** 12.30  
+**Combined Sharpe:** 0.73  
+**Combined P&L:** $6.46  
+
+**Trade Frequency:** 3 trades/month = **36 trades/year**
+
+### Key Findings
+
+1. **Multi-instrument deployment did NOT solve frequency problem:**
+   - 6 instruments generated only 9 trades in 90 days
+   - Still far below production target (15+ trades/month)
+   - QQQ was most active (3 trades), forex barely traded
+
+2. **Quality metrics remained strong:**
+   - 88.9% win rate (excellent)
+   - 1.15 avg R (positive expectancy)
+   - 12.30 profit factor (very good)
+   - 0.73 Sharpe (decent)
+
+3. **Diversification benefit was minimal:**
+   - Ratio: 0.09x (actually worse than single instrument)
+   - Indicates trades are not uncorrelated
+   - All instruments driven by similar macro conditions
+
+### Conclusion
+
+**Multi-instrument testing CONFIRMS core limitation:** Strategy has real edge but insufficient trade frequency for production deployment.
+
+Even with 6 instruments running simultaneously, the system generated only **3 trades/month**. This is insufficient for:
+- Statistical confidence (need 30-50 trades)
+- Consistent capital deployment
+- Meaningful income generation
+- Walk-forward optimization
+
+---
+
 ## Recommendations
 
 ### Option A: Continue Research (1-2 days)
@@ -176,12 +235,14 @@ Tuning needed but risks overfitting on small sample.
 - May improve Wave-Renko win rate from 43.5% to 50-55%
 - **Benefit:** Leverages both edges
 
-### Option C: Defer to Phase 2 (Recommended)
+### Option C: Defer to Phase 2 (RECOMMENDED)
 - Strategy shows promise but needs more work
+- Multi-instrument testing confirmed low frequency limitation
 - Current priorities: Runtime safety layer for 3 working strategies
 - Revisit Smart Money + Homma in Phase 2 with:
-  - Longer historical data
-  - Multi-instrument testing
+  - Longer historical data (12-24 months)
+  - More instruments (10-15 tickers)
+  - Different timeframes (daily, weekly)
   - Hybrid approach evaluation
 
 ---

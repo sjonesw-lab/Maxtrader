@@ -20,10 +20,12 @@ MaxTrader is an **intraday NASDAQ trading research engine** built on a wave-base
 - Uses wave-based Renko + regime filtering (ICT structures disabled)
 
 **High Vol Research (Completed but Deferred):**
-- Tested 2 approaches: Sweep-reclaim (Sharpe -3.50) and Smart Money + Homma MTF (Sharpe 0.94)
-- Smart Money 1H/5min showed promise (75% WR, 3.32R avg) but only 2-4 trades/90 days
-- Insufficient trade frequency for production deployment
-- Phase 2: Will explore longer timeframes, multi-instrument deployment, or hybrid integration
+- Tested 2 approaches: Sweep-reclaim (Sharpe -3.50) and Smart Money + Homma MTF (Sharpe 0.73)
+- Smart Money 1H/5min showed promise (75% WR on COVID, 88.9% WR multi-instrument)
+- Multi-instrument testing: 9 trades/90 days across 6 instruments (SPY, QQQ, IWM, DIA, EUR/USD, GBP/USD)
+- Insufficient trade frequency for production (need 15+/month, got 3/month)
+- Phase 2: Will explore longer timeframes, 10-15 instruments, or hybrid Wave-Renko integration
+- Documentation: docs/HIGH_VOL_DECISION.md, docs/SMARTMONEY_HOMMA_RESEARCH.md
 
 ## User Preferences
 

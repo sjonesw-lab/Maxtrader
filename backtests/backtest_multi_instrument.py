@@ -10,6 +10,22 @@ from engine.data_provider import CSVDataProvider
 import os
 
 
+def resample_to_timeframe(df_1m, timeframe):
+    """Resample 1-minute bars to target timeframe"""
+    df = df_1m.copy()
+    df = df.set_index('timestamp')
+    
+    resampled = df.resample(timeframe).agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum'
+    }).dropna().reset_index()
+    
+    return resampled
+
+
 def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min'):
     """
     Run backtest on a single instrument
@@ -21,17 +37,19 @@ def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min')
     print(f"Testing {instrument_name} (HTF={htf}, LTF={ltf})")
     print(f"{'='*70}")
     
+    # Resample to HTF and LTF
+    df_htf = resample_to_timeframe(df_1m, htf)
+    df_ltf = resample_to_timeframe(df_1m, ltf)
+    
     strategy = SmartMoneyHommaMTF(
-        htf_timeframe=htf,
-        ltf_timeframe=ltf,
-        min_impulse_pct=0.003,
-        min_reward_risk=2.0,
-        max_holding_bars=60
+        htf=htf,
+        ltf=ltf,
+        min_reward_risk=2.0
     )
     
-    signals = strategy.generate_signals(df_1m)
+    signals = strategy.generate_signals(df_htf, df_ltf)
     
-    if signals.empty:
+    if len(signals) == 0:
         print(f"  No signals generated for {instrument_name}")
         return {
             'instrument': instrument_name,
@@ -45,17 +63,17 @@ def run_single_instrument_backtest(df_1m, instrument_name, htf='1h', ltf='5min')
     
     # Simulate trades
     trades = []
-    for idx, signal in signals.iterrows():
-        entry_price = signal['entry_price']
-        stop_loss = signal['stop_loss']
-        take_profit = signal['take_profit']
-        direction = signal['direction']
+    for signal in signals:
+        entry_price = signal.entry_price
+        stop_loss = signal.stop_loss
+        take_profit = signal.target
+        direction = signal.direction
         
         risk = abs(entry_price - stop_loss)
         reward = abs(take_profit - entry_price)
         
         # Simulate execution over next 60 bars
-        entry_time = signal['timestamp']
+        entry_time = signal.timestamp
         future_bars = df_1m[df_1m['timestamp'] > entry_time].head(60)
         
         if future_bars.empty:
@@ -181,8 +199,14 @@ def main():
     fetcher = PolygonDataFetcher()
     all_results = []
     
-    for instrument in instruments:
+    for i, instrument in enumerate(instruments):
         print(f"\n{'='*90}")
+        
+        # Rate limiting for Polygon free tier (5 calls/min)
+        if i > 0:
+            import time
+            print("  Rate limiting... waiting 12s")
+            time.sleep(12)
         
         if instrument['type'] == 'stock':
             ticker = instrument['ticker']
