@@ -4,10 +4,16 @@ Simple, transparent momentum strategy backtest.
 
 Strategy:
 - 3+ consecutive Renko bricks in same direction = momentum signal
-- Enter on next bar at market
+- Enter on NEXT bar at market open (realistic entry execution)
 - Target: 2x brick size (2:1 RR)
 - Stop: 1x brick size
 - Hold max 60 minutes
+- ONE POSITION AT A TIME (no overlapping trades)
+
+Execution Assumptions:
+- Entry: Next bar's open price after signal
+- Exit: Stops/targets checked from entry bar forward
+- No overlapping positions (skip signals during active trades)
 
 No complex filters, no overfitting - just clean momentum trades.
 """
@@ -77,17 +83,36 @@ def generate_simple_signals(df: pd.DataFrame, renko_df: pd.DataFrame, brick_size
 def backtest_signals(df_1min: pd.DataFrame, signals_df: pd.DataFrame, max_hold_bars: int = 60):
     """Execute trades and track performance."""
     trades = []
+    last_exit_time = None
     
     for _, signal in signals_df.iterrows():
-        # Find entry bar
-        entry_mask = df_1min['timestamp'] >= signal['timestamp']
+        # Skip if signal occurs before previous trade exited (no overlapping trades)
+        if last_exit_time is not None and signal['timestamp'] <= last_exit_time:
+            continue
+        
+        # Find NEXT bar after signal for entry
+        entry_mask = df_1min['timestamp'] > signal['timestamp']
         if not entry_mask.any():
             continue
             
         entry_idx = df_1min[entry_mask].index[0]
         entry_bar = df_1min.loc[entry_idx]
         
-        # Define exit window
+        # Enter at market (next bar open price)
+        actual_entry_price = entry_bar['open']
+        
+        # Recalculate target and stop from actual entry price
+        brick_size = signal['target_price'] - signal['entry_price'] if signal['direction'] == 'long' else signal['entry_price'] - signal['target_price']
+        brick_size = brick_size / 2  # Target was 2x brick size
+        
+        if signal['direction'] == 'long':
+            actual_target = actual_entry_price + (2 * brick_size)
+            actual_stop = actual_entry_price - brick_size
+        else:
+            actual_target = actual_entry_price - (2 * brick_size)
+            actual_stop = actual_entry_price + brick_size
+        
+        # Define exit window (start from entry bar itself to check immediate exit)
         exit_window = df_1min.loc[entry_idx:entry_idx + max_hold_bars]
         
         if len(exit_window) == 0:
@@ -96,10 +121,10 @@ def backtest_signals(df_1min: pd.DataFrame, signals_df: pd.DataFrame, max_hold_b
         # Track trade
         trade = {
             'entry_time': entry_bar['timestamp'],
-            'entry_price': signal['entry_price'],
+            'entry_price': actual_entry_price,
             'direction': signal['direction'],
-            'target': signal['target_price'],
-            'stop': signal['stop_price'],
+            'target': actual_target,
+            'stop': actual_stop,
             'brick_count': signal['brick_count']
         }
         
@@ -115,28 +140,28 @@ def backtest_signals(df_1min: pd.DataFrame, signals_df: pd.DataFrame, max_hold_b
             
             if signal['direction'] == 'long':
                 # Check target
-                if bar['high'] >= signal['target_price']:
+                if bar['high'] >= actual_target:
                     hit_target = True
-                    exit_price = signal['target_price']
+                    exit_price = actual_target
                     exit_time = bar['timestamp']
                     break
                 # Check stop
-                if bar['low'] <= signal['stop_price']:
+                if bar['low'] <= actual_stop:
                     hit_stop = True
-                    exit_price = signal['stop_price']
+                    exit_price = actual_stop
                     exit_time = bar['timestamp']
                     break
             else:  # short
                 # Check target
-                if bar['low'] <= signal['target_price']:
+                if bar['low'] <= actual_target:
                     hit_target = True
-                    exit_price = signal['target_price']
+                    exit_price = actual_target
                     exit_time = bar['timestamp']
                     break
                 # Check stop
-                if bar['high'] >= signal['stop_price']:
+                if bar['high'] >= actual_stop:
                     hit_stop = True
-                    exit_price = signal['stop_price']
+                    exit_price = actual_stop
                     exit_time = bar['timestamp']
                     break
         
@@ -147,9 +172,9 @@ def backtest_signals(df_1min: pd.DataFrame, signals_df: pd.DataFrame, max_hold_b
         
         # Calculate P&L
         if signal['direction'] == 'long':
-            pnl = exit_price - signal['entry_price']
+            pnl = exit_price - actual_entry_price
         else:
-            pnl = signal['entry_price'] - exit_price
+            pnl = actual_entry_price - exit_price
         
         trade.update({
             'exit_time': exit_time,
@@ -158,10 +183,11 @@ def backtest_signals(df_1min: pd.DataFrame, signals_df: pd.DataFrame, max_hold_b
             'hit_target': hit_target,
             'hit_stop': hit_stop,
             'pnl': pnl,
-            'pnl_pct': (pnl / signal['entry_price']) * 100
+            'pnl_pct': (pnl / actual_entry_price) * 100
         })
         
         trades.append(trade)
+        last_exit_time = exit_time
     
     return pd.DataFrame(trades)
 

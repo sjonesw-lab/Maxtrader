@@ -6,6 +6,37 @@ MaxTrader is an intraday NASDAQ trading research engine designed for quality-dri
 
 The system now includes a professional real-time trading dashboard with WebSocket-based live updates, comprehensive safety monitoring, and integrated Pushover notifications for critical alerts.
 
+## Verified Performance (November 2025)
+
+**Simple Momentum Strategy** - Backtested on real Polygon.io market data:
+
+**Total Results (4 Months, 831 Trades):**
+- **Win Rate:** 37.5% (average)
+- **Profit Factor:** 1.14 (in-sample), 0.89 (out-of-sample)
+- **Total P&L:** +$28.38 (barely profitable overall)
+
+**Per Month Breakdown:**
+| Month | Trades | Win Rate | Profit Factor | P&L |
+|-------|--------|----------|---------------|-----|
+| May 2021 | 267 | 36.0% | 1.07 | +$2.81 |
+| April 2022 | 263 | 39.2% | 1.20 | +$19.46 |
+| June 2023 | 225 | 40.4% | 1.18 | +$9.62 |
+| June 2024 (out-of-sample) | 76 | 32.9% | 0.89 | -$3.52 |
+
+**Strategy Rules:**
+- Entry: 3+ consecutive Renko bricks (momentum signal), enter on NEXT bar at market open
+- Target: 2x brick size (2:1 reward/risk ratio)
+- Stop: 1x brick size
+- Max hold: 60 minutes
+- Renko parameters: ATR-based, k=3.0, 14-period ATR
+- One position at a time (no overlapping trades)
+
+**Data Sources:** All results from actual 1-minute QQQ bars downloaded via Polygon.io API. No curve-fitting or optimization—results represent straightforward momentum pattern detection with fixed parameters.
+
+**Validation:** Out-of-sample testing on June 2024 (32.9% WR, 0.89 PF, -$3.52 P&L) shows the strategy LOSES MONEY on unseen data. The strategy does not generalize and performs poorly outside the training period.
+
+**Implementation:** See `backtests/simple_momentum_backtest.py` for complete transparent code and replication instructions. Execution assumptions: entry at next bar's open price, realistic stop/target fills, single-position enforcement.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
