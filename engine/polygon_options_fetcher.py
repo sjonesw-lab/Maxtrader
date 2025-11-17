@@ -267,19 +267,25 @@ class PolygonOptionsFetcher:
             print(f"❌ Error fetching 0DTE option: {e}")
             return None
     
-    def get_exit_price(self, contract_ticker: str) -> Optional[float]:
+    def get_exit_price(self, contract_ticker: str, underlying: str = 'QQQ') -> Optional[float]:
         """
         Get REAL-TIME bid price for exiting an option position.
         Uses BID price (conservative - you sell at the bid).
         
         Args:
             contract_ticker: Option contract symbol (e.g., 'O:QQQ251117C00500000')
+            underlying: Underlying symbol (default: 'QQQ')
         
         Returns:
-            Exit value per contract (bid * 100) or None
+            Exit value per contract (bid * 100) or None if API fails
         """
         try:
-            url = f"{self.BASE_URL}/v3/snapshot/options/{contract_ticker}"
+            # CORRECT URL: /v3/snapshot/options/{underlying}/{contract}
+            # URL-encode the contract ticker for safety
+            import urllib.parse
+            encoded_contract = urllib.parse.quote(contract_ticker, safe='')
+            
+            url = f"{self.BASE_URL}/v3/snapshot/options/{underlying}/{encoded_contract}"
             params = {'apiKey': self.api_key}
             
             response = requests.get(url, params=params, timeout=10)
@@ -288,7 +294,7 @@ class PolygonOptionsFetcher:
             data = response.json()
             
             if data.get('status') != 'OK' or not data.get('results'):
-                print(f"⚠️  No data for {contract_ticker}")
+                print(f"⚠️  Polygon returned no data for {contract_ticker}")
                 return None
             
             result = data['results']
@@ -302,12 +308,13 @@ class PolygonOptionsFetcher:
                 if last_price > 0:
                     print(f"   Using last trade price (no bid): ${last_price:.2f}")
                     return last_price * 100
-                print(f"   Option worthless: $0.00")
-                return 0  # Worthless
+                # Bid and last are both 0 - option truly worthless
+                print(f"   Option expired worthless: $0.00")
+                return 0.0  # Explicit 0.0, not None
             
             print(f"   Exit at bid: ${bid:.2f} = ${bid * 100:.2f} per contract")
             return bid * 100
             
         except Exception as e:
-            print(f"❌ Error fetching exit price: {e}")
-            return None
+            print(f"❌ Polygon API error fetching exit price: {e}")
+            return None  # API failure - let caller handle

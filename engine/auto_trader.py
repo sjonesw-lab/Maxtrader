@@ -203,6 +203,11 @@ class AutomatedDualTrader:
             print(f"⚠️  Conservative: Invalid premium ($0.00)")
             return
         
+        # Check if we can afford at least 1 contract
+        if risk_budget < premium_per_contract or balance < premium_per_contract:
+            print(f"⚠️  Conservative: Insufficient balance (${balance:.2f}) for premium (${premium_per_contract:.2f})")
+            return
+        
         num_contracts = int(risk_budget / premium_per_contract)
         num_contracts = max(1, min(num_contracts, 10))  # 1-10 contracts
         
@@ -269,6 +274,11 @@ class AutomatedDualTrader:
         premium_per_contract = option_data['premium']
         if premium_per_contract == 0:
             print(f"⚠️  Aggressive: Invalid premium ($0.00)")
+            return
+        
+        # Check if we can afford at least 1 contract
+        if risk_budget < premium_per_contract or balance < premium_per_contract:
+            print(f"⚠️  Aggressive: Insufficient balance (${balance:.2f}) for premium (${premium_per_contract:.2f})")
             return
         
         num_contracts = int(risk_budget / premium_per_contract)
@@ -358,17 +368,16 @@ class AutomatedDualTrader:
         strategy = position['strategy']
         
         # Fetch REAL exit price from Polygon (uses bid = realistic exit)
-        exit_value_per_contract = self.options_fetcher.get_exit_price(position['option_contract'])
+        exit_value_per_contract = self.options_fetcher.get_exit_price(
+            contract_ticker=position['option_contract'],
+            underlying=self.symbol
+        )
         
         if exit_value_per_contract is None:
-            # Fallback: estimate exit value based on price movement
-            price_change = abs(exit_price - position['entry_price'])
-            if hit_target:
-                # Target hit - option has intrinsic value
-                exit_value_per_contract = price_change * 100
-            else:
-                # Time exit - option decayed, worth ~30% of premium
-                exit_value_per_contract = position['premium_paid'] / position['num_contracts'] * 0.3
+            # API FAILURE - cannot get reliable exit price, skip this close attempt
+            print(f"⚠️  Cannot close {strategy} position - Polygon API failed to return exit price")
+            print(f"   Will retry on next cycle")
+            return  # Don't close - wait for API to recover
         
         # Calculate total exit value
         total_exit_value = exit_value_per_contract * position['num_contracts']
