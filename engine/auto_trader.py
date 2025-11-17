@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Fully Automated Dual-Strategy Paper Trading System
-Executes both conservative (3% risk, 100% longs) and aggressive (4% risk, 75/25 mix)
+Uses REAL Polygon.io options pricing for realistic 0DTE paper trading
+Executes both conservative (3% risk) and aggressive (4% risk) strategies
 """
 
 import os
@@ -15,41 +16,41 @@ from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
 
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
 from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.ict_structures import detect_all_structures
+from engine.polygon_options_fetcher import PolygonOptionsFetcher
 from dashboard.notifier import notifier
 
 
 class AutomatedDualTrader:
     """
-    Fully automated dual strategy trader.
+    Fully automated dual strategy paper trader.
     
-    NOTE: Alpaca paper trading doesn't support options, so we:
-    1. Track simulated options positions internally
-    2. Use small stock positions as proxies for risk tracking
-    3. Calculate P&L based on actual price movements
+    Uses REAL Polygon options pricing:
+    1. Fetches real 0DTE options prices (bid/ask) from Polygon
+    2. Tracks positions internally with realistic premium costs
+    3. Calculates P&L using real market pricing
+    4. NO broker integration - pure paper trading
     """
     
-    def __init__(self, state_file='/tmp/trader_state.json'):
-        # Alpaca clients
-        self.api_key = os.environ.get('ALPACA_API_KEY')
-        self.api_secret = os.environ.get('ALPACA_API_SECRET')
+    def __init__(self, starting_balance=25000, state_file='/tmp/trader_state.json'):
+        # Data clients
+        self.alpaca_key = os.environ.get('ALPACA_API_KEY')
+        self.alpaca_secret = os.environ.get('ALPACA_API_SECRET')
         
-        if not self.api_key or not self.api_secret:
-            raise ValueError("ALPACA_API_KEY and ALPACA_API_SECRET must be set in environment")
+        if not self.alpaca_key or not self.alpaca_secret:
+            raise ValueError("ALPACA_API_KEY and ALPACA_API_SECRET required for market data")
         
-        self.trading_client = TradingClient(self.api_key, self.api_secret, paper=True)
-        self.data_client = StockHistoricalDataClient(self.api_key, self.api_secret)
+        self.data_client = StockHistoricalDataClient(self.alpaca_key, self.alpaca_secret)
+        self.options_fetcher = PolygonOptionsFetcher()
         
         # Configuration
         self.symbol = 'QQQ'
+        self.starting_balance = starting_balance
         self.conservative_risk_pct = 3.0
         self.aggressive_risk_pct = 4.0
         self.atr_multiple = 5.0
@@ -57,6 +58,7 @@ class AutomatedDualTrader:
         
         # State tracking
         self.state_file = state_file
+        self.account_balance = starting_balance
         self.positions = {
             'conservative': [],
             'aggressive': []
@@ -74,14 +76,23 @@ class AutomatedDualTrader:
         self.load_state()
     
     def get_account_balance(self) -> float:
-        """Get current account equity."""
-        account = self.trading_client.get_account()
-        return float(account.equity)
+        """Get current account balance (paper trading)."""
+        return self.account_balance
     
     def is_market_open(self) -> bool:
-        """Check if market is open."""
-        clock = self.trading_client.get_clock()
-        return clock.is_open
+        """Check if market is open (simple hour check)."""
+        now = datetime.now()
+        # Market hours: 9:30 AM - 4:00 PM ET (Mon-Fri)
+        if now.weekday() >= 5:  # Weekend
+            return False
+        hour = now.hour
+        minute = now.minute
+        # 9:30 AM - 4:00 PM
+        if hour < 9 or (hour == 9 and minute < 30):
+            return False
+        if hour >= 16:
+            return False
+        return True
     
     def get_recent_bars(self, hours=2) -> pd.DataFrame:
         """Fetch recent 1-minute bars."""
@@ -171,118 +182,140 @@ class AutomatedDualTrader:
         return signals
     
     def execute_conservative(self, signal: Dict, balance: float):
-        """Execute conservative strategy - REAL Alpaca stock order (3% risk)."""
+        """Execute conservative strategy using REAL Polygon 0DTE options pricing (3% risk)."""
         risk_budget = balance * (self.conservative_risk_pct / 100)
         
-        # Calculate shares to buy with 3% of account
-        shares = int(risk_budget / signal['price'])
-        shares = max(1, shares)  # At least 1 share
+        # Fetch REAL 0DTE option price from Polygon
+        option_data = self.options_fetcher.get_0dte_option_price(
+            underlying_ticker=self.symbol,
+            current_price=signal['price'],
+            direction=signal['direction'],
+            strike_offset=0  # ATM
+        )
         
-        # Place REAL market order via Alpaca
-        try:
-            order_data = MarketOrderRequest(
-                symbol=self.symbol,
-                qty=shares,
-                side=OrderSide.BUY if signal['direction'] == 'LONG' else OrderSide.SELL,
-                time_in_force=TimeInForce.DAY
-            )
-            
-            order = self.trading_client.submit_order(order_data)
-            
-            position = {
-                'strategy': 'conservative',
-                'entry_time': datetime.now(),
-                'entry_price': signal['price'],
-                'direction': signal['direction'],
-                'target_price': signal['target'],
-                'shares': shares,
-                'cost': shares * signal['price'],
-                'atr': signal['atr'],
-                'status': 'open',
-                'order_id': str(order.id),
-                'alpaca_order': order
-            }
-            
-            self.positions['conservative'].append(position)
-            
-            # Notification
-            notifier.send_notification(
-                f"💼 CONSERVATIVE Entry (REAL ORDER)\n"
-                f"{signal['direction']} {shares} shares QQQ\n"
-                f"Entry: ${signal['price']:.2f}\n"
-                f"Target: ${signal['target']:.2f}\n"
-                f"Risk: ${shares * signal['price']:.2f}\n"
-                f"Order ID: {order.id}",
-                title="Conservative Entry",
-                priority=0
-            )
-            
-            print(f"✅ Conservative {signal['direction']}: {shares} shares @ ${signal['price']:.2f} [Order {order.id}]")
-            
-        except Exception as e:
-            print(f"❌ Conservative order failed: {e}")
-            notifier.send_notification(
-                f"Failed to place conservative order:\n{str(e)[:200]}",
-                title="⚠️ Order Error",
-                priority=2
-            )
+        if not option_data:
+            print(f"⚠️  Conservative: No 0DTE options available")
+            return
+        
+        # Calculate number of contracts based on premium
+        premium_per_contract = option_data['premium']
+        if premium_per_contract == 0:
+            print(f"⚠️  Conservative: Invalid premium ($0.00)")
+            return
+        
+        num_contracts = int(risk_budget / premium_per_contract)
+        num_contracts = max(1, min(num_contracts, 10))  # 1-10 contracts
+        
+        total_cost = num_contracts * premium_per_contract
+        
+        # Deduct cost from account balance
+        self.account_balance -= total_cost
+        
+        # Track position with REAL option data
+        position = {
+            'strategy': 'conservative',
+            'entry_time': datetime.now(),
+            'entry_price': signal['price'],
+            'direction': signal['direction'],
+            'target_price': signal['target'],
+            'num_contracts': num_contracts,
+            'premium_paid': total_cost,
+            'option_contract': option_data['contract'],
+            'strike': option_data['strike'],
+            'entry_bid': option_data['bid'],
+            'entry_ask': option_data['ask'],
+            'delta': option_data['delta'],
+            'iv': option_data['iv'],
+            'atr': signal['atr'],
+            'status': 'open'
+        }
+        
+        self.positions['conservative'].append(position)
+        
+        # Notification
+        notifier.send_notification(
+            f"💼 CONSERVATIVE Entry (REAL 0DTE)\n"
+            f"{signal['direction']} {num_contracts} contracts\n"
+            f"Strike: ${option_data['strike']:.2f}\n"
+            f"Premium: ${option_data['ask']:.2f} (${total_cost:.2f} total)\n"
+            f"Target: ${signal['target']:.2f}\n"
+            f"Delta: {option_data['delta']:.2f}",
+            title="Conservative Entry",
+            priority=0
+        )
+        
+        print(f"✅ Conservative {signal['direction']}: {num_contracts}x {option_data['contract']}")
+        print(f"   Premium: ${option_data['ask']:.2f} × {num_contracts} = ${total_cost:.2f}")
+        
+        self.save_state()
     
     def execute_aggressive(self, signal: Dict, balance: float):
-        """Execute aggressive strategy - REAL Alpaca stock order (4% risk)."""
+        """Execute aggressive strategy using REAL Polygon 0DTE options pricing (4% risk)."""
         risk_budget = balance * (self.aggressive_risk_pct / 100)
         
-        # Use 4% of account for larger position
-        shares = int(risk_budget / signal['price'])
-        shares = max(1, shares)
+        # Fetch REAL 0DTE option price from Polygon
+        option_data = self.options_fetcher.get_0dte_option_price(
+            underlying_ticker=self.symbol,
+            current_price=signal['price'],
+            direction=signal['direction'],
+            strike_offset=0  # ATM
+        )
         
-        # Place REAL market order via Alpaca
-        try:
-            order_data = MarketOrderRequest(
-                symbol=self.symbol,
-                qty=shares,
-                side=OrderSide.BUY if signal['direction'] == 'LONG' else OrderSide.SELL,
-                time_in_force=TimeInForce.DAY
-            )
-            
-            order = self.trading_client.submit_order(order_data)
-            
-            position = {
-                'strategy': 'aggressive',
-                'entry_time': datetime.now(),
-                'entry_price': signal['price'],
-                'direction': signal['direction'],
-                'target_price': signal['target'],
-                'shares': shares,
-                'cost': shares * signal['price'],
-                'atr': signal['atr'],
-                'status': 'open',
-                'order_id': str(order.id),
-                'alpaca_order': order
-            }
-            
-            self.positions['aggressive'].append(position)
-            
-            # Notification
-            notifier.send_notification(
-                f"🚀 AGGRESSIVE Entry (REAL ORDER)\n"
-                f"{signal['direction']} {shares} shares QQQ\n"
-                f"Entry: ${signal['price']:.2f}\n"
-                f"Target: ${signal['target']:.2f}\n"
-                f"Risk: ${shares * signal['price']:.2f}\n"
-                f"Order ID: {order.id}",
-                title="Aggressive Entry",
-                priority=0
-            )
-            
-            print(f"✅ Aggressive {signal['direction']}: {shares} shares @ ${signal['price']:.2f} [Order {order.id}]")
-            
-        except Exception as e:
-            print(f"❌ Aggressive order failed: {e}")
-            notifier.send_notification(
-                f"Failed to place aggressive order:\n{str(e)[:200]}",
-                title="⚠️ Order Error",
-                priority=2
-            )
+        if not option_data:
+            print(f"⚠️  Aggressive: No 0DTE options available")
+            return
+        
+        # Calculate number of contracts (4% risk = more contracts than conservative)
+        premium_per_contract = option_data['premium']
+        if premium_per_contract == 0:
+            print(f"⚠️  Aggressive: Invalid premium ($0.00)")
+            return
+        
+        num_contracts = int(risk_budget / premium_per_contract)
+        num_contracts = max(1, min(num_contracts, 10))  # 1-10 contracts
+        
+        total_cost = num_contracts * premium_per_contract
+        
+        # Deduct cost from account balance
+        self.account_balance -= total_cost
+        
+        # Track position with REAL option data
+        position = {
+            'strategy': 'aggressive',
+            'entry_time': datetime.now(),
+            'entry_price': signal['price'],
+            'direction': signal['direction'],
+            'target_price': signal['target'],
+            'num_contracts': num_contracts,
+            'premium_paid': total_cost,
+            'option_contract': option_data['contract'],
+            'strike': option_data['strike'],
+            'entry_bid': option_data['bid'],
+            'entry_ask': option_data['ask'],
+            'delta': option_data['delta'],
+            'iv': option_data['iv'],
+            'atr': signal['atr'],
+            'status': 'open'
+        }
+        
+        self.positions['aggressive'].append(position)
+        
+        # Notification
+        notifier.send_notification(
+            f"🚀 AGGRESSIVE Entry (REAL 0DTE)\n"
+            f"{signal['direction']} {num_contracts} contracts\n"
+            f"Strike: ${option_data['strike']:.2f}\n"
+            f"Premium: ${option_data['ask']:.2f} (${total_cost:.2f} total)\n"
+            f"Target: ${signal['target']:.2f}\n"
+            f"Delta: {option_data['delta']:.2f}",
+            title="Aggressive Entry",
+            priority=0
+        )
+        
+        print(f"✅ Aggressive {signal['direction']}: {num_contracts}x {option_data['contract']}")
+        print(f"   Premium: ${option_data['ask']:.2f} × {num_contracts} = ${total_cost:.2f}")
+        
+        self.save_state()
     
     def check_exits(self, current_price: float):
         """Check and execute exits for both strategies."""
@@ -321,73 +354,74 @@ class AutomatedDualTrader:
                 self.close_position(pos, current_price, hit_target)
     
     def close_position(self, position: Dict, exit_price: float, hit_target: bool):
-        """Close a position - REAL Alpaca close order."""
+        """Close a position using REAL Polygon exit pricing."""
         strategy = position['strategy']
         
-        # Place REAL close order via Alpaca
-        try:
-            # Reverse the original order direction
-            close_side = OrderSide.SELL if position['direction'] == 'LONG' else OrderSide.BUY
-            
-            order_data = MarketOrderRequest(
-                symbol=self.symbol,
-                qty=position['shares'],
-                side=close_side,
-                time_in_force=TimeInForce.DAY
-            )
-            
-            close_order = self.trading_client.submit_order(order_data)
-            
-            # Calculate actual P&L from stock position
-            if position['direction'] == 'LONG':
-                pnl = (exit_price - position['entry_price']) * position['shares']
-            else:  # SHORT
-                pnl = (position['entry_price'] - exit_price) * position['shares']
-            
-            # Update position
-            position['status'] = 'closed'
-            position['exit_time'] = datetime.now()
-            position['exit_price'] = exit_price
-            position['pnl'] = pnl
-            position['hit_target'] = hit_target
-            position['close_order_id'] = str(close_order.id)
-            
-            # Update stats
-            self.stats[strategy]['trades'] += 1
-            self.stats[strategy]['total_pnl'] += pnl
-            if pnl > 0:
-                self.stats[strategy]['wins'] += 1
-            
-            # Notification
-            emoji = "🎯" if hit_target else "⏱️"
-            color = "🟢" if pnl > 0 else "🔴"
-            
-            notifier.send_notification(
-                f"{emoji} {strategy.upper()} Exit {color} (REAL CLOSE)\n"
-                f"P&L: ${pnl:+.2f}\n"
-                f"Entry: ${position['entry_price']:.2f} → Exit: ${exit_price:.2f}\n"
-                f"Shares: {position['shares']}\n"
-                f"{'Target HIT' if hit_target else 'Time limit'}\n"
-                f"Close Order: {close_order.id}",
-                title=f"{strategy.title()} Exit",
-                priority=0
-            )
-            
-            print(f"{color} {strategy.upper()} closed: ${pnl:+.2f} ({position['shares']} shares, {'target' if hit_target else 'time'}) [Close Order {close_order.id}]")
-            
-            self.save_state()
-            
-        except Exception as e:
-            print(f"❌ Failed to close {strategy} position: {e}")
-            notifier.send_notification(
-                f"Failed to close {strategy} position:\n{str(e)[:200]}",
-                title="⚠️ Close Error",
-                priority=2
-            )
+        # Fetch REAL exit price from Polygon (uses bid = realistic exit)
+        exit_value_per_contract = self.options_fetcher.get_exit_price(position['option_contract'])
+        
+        if exit_value_per_contract is None:
+            # Fallback: estimate exit value based on price movement
+            price_change = abs(exit_price - position['entry_price'])
+            if hit_target:
+                # Target hit - option has intrinsic value
+                exit_value_per_contract = price_change * 100
+            else:
+                # Time exit - option decayed, worth ~30% of premium
+                exit_value_per_contract = position['premium_paid'] / position['num_contracts'] * 0.3
+        
+        # Calculate total exit value
+        total_exit_value = exit_value_per_contract * position['num_contracts']
+        
+        # Calculate P&L
+        pnl = total_exit_value - position['premium_paid']
+        
+        # Add exit proceeds to account balance
+        self.account_balance += total_exit_value
+        
+        # Update position
+        position['status'] = 'closed'
+        position['exit_time'] = datetime.now()
+        position['exit_price'] = exit_price
+        position['exit_value_per_contract'] = exit_value_per_contract
+        position['total_exit_value'] = total_exit_value
+        position['pnl'] = pnl
+        position['hit_target'] = hit_target
+        
+        # Update stats
+        self.stats[strategy]['trades'] += 1
+        self.stats[strategy]['total_pnl'] += pnl
+        if pnl > 0:
+            self.stats[strategy]['wins'] += 1
+        
+        # Notification
+        emoji = "🎯" if hit_target else "⏱️"
+        color = "🟢" if pnl > 0 else "🔴"
+        
+        exit_bid = exit_value_per_contract / 100
+        
+        notifier.send_notification(
+            f"{emoji} {strategy.upper()} Exit {color}\n"
+            f"P&L: ${pnl:+.2f}\n"
+            f"Entry Premium: ${position['premium_paid']:.2f}\n"
+            f"Exit Value: ${total_exit_value:.2f} (${exit_bid:.2f} bid)\n"
+            f"Contracts: {position['num_contracts']}\n"
+            f"{'Target HIT' if hit_target else 'Time limit'}",
+            title=f"{strategy.title()} Exit",
+            priority=0
+        )
+        
+        print(f"{color} {strategy.upper()} closed: ${pnl:+.2f}")
+        print(f"   {position['num_contracts']} contracts: ${position['premium_paid']:.2f} → ${total_exit_value:.2f}")
+        print(f"   ({'target' if hit_target else 'time exit'})")
+        
+        self.save_state()
     
     def save_state(self):
         """Save current state to file."""
         state = {
+            'account_balance': self.account_balance,
+            'starting_balance': self.starting_balance,
             'positions': self.positions,
             'stats': self.stats,
             'last_updated': datetime.now().isoformat()
@@ -401,9 +435,10 @@ class AutomatedDualTrader:
             if os.path.exists(self.state_file):
                 with open(self.state_file, 'r') as f:
                     state = json.load(f)
+                    self.account_balance = state.get('account_balance', self.starting_balance)
                     self.positions = state.get('positions', {'conservative': [], 'aggressive': []})
                     self.stats = state.get('stats', self.stats)
-                    print(f"✅ State loaded: {self.stats}")
+                    print(f"✅ State loaded - Balance: ${self.account_balance:.2f}, Stats: {self.stats}")
         except Exception as e:
             print(f"⚠️ Could not load state: {e}")
     

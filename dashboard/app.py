@@ -34,7 +34,7 @@ class DashboardState:
     """Centralized state management for the dashboard."""
     
     def __init__(self):
-        self.account_balance = 100000.00  # Alpaca paper account
+        self.account_balance = 25000.00  # Paper trading starting balance
         self.daily_pnl = 0.0
         self.total_pnl = 0.0
         
@@ -233,7 +233,7 @@ def simulate_market_updates():
     Background thread to update dashboard from live trader state.
     """
     cycle_count = 0
-    peak_balance = 100000.00
+    peak_balance = 25000.00
     last_loss_notification = 0
     last_circuit_check = time.time()
     
@@ -282,7 +282,7 @@ def simulate_market_updates():
         cycle_count += 1
         
         # Update account balance from REAL P&L
-        state.account_balance = 100000 + state.total_pnl  # Alpaca paper starts at $100k
+        state.account_balance = 25000 + state.total_pnl  # Paper trading starts at $25k
         state.daily_pnl = state.total_pnl  # For now, treat all P&L as daily
         
         peak_balance = max(peak_balance, state.account_balance)
