@@ -35,9 +35,13 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
+localPort = 33041
+externalPort = 3001
+
+[[ports]]
 localPort = 33139
 externalPort = 3000
 
-[[ports]]
-localPort = 44873
-externalPort = 3001
+[deployment]
+deploymentTarget = "autoscale"
+run = ["python", "dashboard/app.py"]
