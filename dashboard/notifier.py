@@ -56,7 +56,10 @@ class PushoverNotifier:
                 print(f"[PUSHOVER SENT] {title}: {message}")
                 return True
             else:
-                print(f"[PUSHOVER ERROR] Status {response.status_code}: {response.text}")
+                # Silently disable on invalid credentials
+                if response.status_code == 400:
+                    self.enabled = False
+                    print(f"[PUSHOVER DISABLED] Invalid credentials - notifications disabled")
                 return False
                 
         except Exception as e:

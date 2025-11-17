@@ -18,6 +18,10 @@ author = "agent"
 task = "workflow.run"
 args = "dashboard"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "auto-trader"
+
 [[workflows.workflow]]
 name = "dashboard"
 author = "agent"
@@ -29,6 +33,17 @@ waitForPort = 5000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow]]
+name = "auto-trader"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python engine/auto_trader.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[ports]]
 localPort = 5000

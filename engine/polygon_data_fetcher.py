@@ -54,8 +54,12 @@ class PolygonDataFetcher:
         
         data = response.json()
         
-        if data.get('status') != 'OK':
-            raise Exception(f"Polygon API returned status: {data.get('status')}")
+        status = data.get('status')
+        if status not in ['OK', 'DELAYED']:
+            raise Exception(f"Polygon API returned status: {status}")
+        
+        if status == 'DELAYED':
+            print(f"  ⚠️  Using delayed data (15-min delay) - OK for paper trading")
         
         if 'results' not in data or len(data['results']) == 0:
             raise Exception(f"No data returned for {ticker}")

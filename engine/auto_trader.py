@@ -16,13 +16,10 @@ from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
 
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-
 from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.ict_structures import detect_all_structures
 from engine.polygon_options_fetcher import PolygonOptionsFetcher
+from engine.polygon_data_fetcher import PolygonDataFetcher
 from dashboard.notifier import notifier
 
 
@@ -38,14 +35,8 @@ class AutomatedDualTrader:
     """
     
     def __init__(self, starting_balance=25000, state_file='/tmp/trader_state.json'):
-        # Data clients
-        self.alpaca_key = os.environ.get('ALPACA_API_KEY')
-        self.alpaca_secret = os.environ.get('ALPACA_API_SECRET')
-        
-        if not self.alpaca_key or not self.alpaca_secret:
-            raise ValueError("ALPACA_API_KEY and ALPACA_API_SECRET required for market data")
-        
-        self.data_client = StockHistoricalDataClient(self.alpaca_key, self.alpaca_secret)
+        # Data clients (using Polygon for BOTH bar data and options pricing)
+        self.data_fetcher = PolygonDataFetcher()
         self.options_fetcher = PolygonOptionsFetcher()
         
         # Configuration
@@ -95,18 +86,19 @@ class AutomatedDualTrader:
         return True
     
     def get_recent_bars(self, hours=2) -> pd.DataFrame:
-        """Fetch recent 1-minute bars."""
-        request = StockBarsRequest(
-            symbol_or_symbols=self.symbol,
-            timeframe=TimeFrame.Minute,
-            start=datetime.now() - timedelta(hours=hours),
-            end=datetime.now()
+        """Fetch recent 1-minute bars from Polygon."""
+        end = datetime.now()
+        start = end - timedelta(hours=hours)
+        
+        df = self.data_fetcher.fetch_stock_bars(
+            ticker=self.symbol,
+            from_date=start.strftime('%Y-%m-%d'),
+            to_date=end.strftime('%Y-%m-%d')
         )
         
-        bars = self.data_client.get_stock_bars(request)
-        df = bars.df.reset_index()
-        df = df.rename(columns={'timestamp': 'timestamp'})
-        df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+        if df is None or len(df) == 0:
+            return pd.DataFrame()
+        
         return df
     
     def calculate_atr(self, df: pd.DataFrame, period=14) -> float:
