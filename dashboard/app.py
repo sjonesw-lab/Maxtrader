@@ -10,23 +10,49 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard.notifier import notifier
+from engine.live_trading_engine import DualStrategyTrader
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET', 'dev-secret-key-change-in-production')
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Initialize live trading engine
+trader = DualStrategyTrader()
 
 
 class DashboardState:
     """Centralized state management for the dashboard."""
     
     def __init__(self):
-        self.account_balance = 50000.00
+        self.account_balance = 100000.00  # Alpaca paper account
         self.daily_pnl = 0.0
         self.total_pnl = 0.0
+        
+        # Dual strategy tracking
+        self.conservative = {
+            'risk_pct': 3.0,
+            'allocation': '100% Longs',
+            'trades': 0,
+            'wins': 0,
+            'total_pnl': 0.0,
+            'active_positions': 0,
+            'win_rate': 0.0
+        }
+        self.aggressive = {
+            'risk_pct': 4.0,
+            'allocation': '75% Longs / 25% Spreads',
+            'trades': 0,
+            'wins': 0,
+            'total_pnl': 0.0,
+            'active_positions': 0,
+            'win_rate': 0.0
+        }
+        
         self.open_positions = []
         self.trade_history = []
         self.current_regime = "NORMAL_VOL"
         self.vix_level = 18.5
+        self.market_open = False
         self.circuit_breakers = {
             "rapid_loss": {"triggered": False, "threshold": "2% in 15min"},
             "error_rate": {"triggered": False, "threshold": "3 errors in 5min"},
@@ -75,6 +101,9 @@ def get_state():
         'account_balance': state.account_balance,
         'daily_pnl': state.daily_pnl,
         'total_pnl': state.total_pnl,
+        'market_open': state.market_open,
+        'conservative': state.conservative,
+        'aggressive': state.aggressive,
         'open_positions': state.open_positions,
         'trade_history': state.trade_history[-20:],
         'current_regime': state.current_regime,
