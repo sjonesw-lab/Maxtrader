@@ -125,12 +125,15 @@ def handle_test_notification(data):
 
 @socketio.on('kill_switch')
 def handle_kill_switch():
-    """Handle kill switch activation."""
+    """Handle kill switch activation - PERMANENT until manual reset."""
     state.safety_status['kill_switch'] = True
     print(f"🛑 KILL SWITCH ACTIVATED at {datetime.now()}")
     
+    with open('/tmp/maxtrader_kill_switch.lock', 'w') as f:
+        f.write(f"ACTIVATED at {datetime.now().isoformat()}")
+    
     notifier.send_notification(
-        message="Kill switch activated! All trading has been halted immediately.",
+        message="Kill switch activated! All trading has been halted immediately. Manual reset required.",
         title="🚨 KILL SWITCH ACTIVATED",
         priority=2,
         sound="siren"
@@ -141,6 +144,44 @@ def handle_kill_switch():
     })
     
     emit('kill_switch_result', {'success': True})
+
+
+@socketio.on('reset_kill_switch')
+def handle_reset_kill_switch(data):
+    """Reset kill switch - requires confirmation code."""
+    confirmation_code = data.get('code', '')
+    
+    if confirmation_code != 'RESET2025':
+        emit('reset_result', {
+            'success': False,
+            'message': 'Invalid confirmation code'
+        })
+        return
+    
+    state.safety_status['kill_switch'] = False
+    
+    import os
+    try:
+        os.remove('/tmp/maxtrader_kill_switch.lock')
+    except FileNotFoundError:
+        pass
+    
+    print(f"✅ Kill switch RESET at {datetime.now()}")
+    
+    notifier.send_notification(
+        message="Kill switch has been manually reset. Trading can resume.",
+        title="✅ Kill Switch Reset",
+        priority=1
+    )
+    
+    broadcast_update('kill_switch_reset', {
+        'timestamp': datetime.now().isoformat()
+    })
+    
+    emit('reset_result', {
+        'success': True,
+        'message': 'Kill switch reset successfully'
+    })
 
 
 def broadcast_update(event_type: str, data: dict):
@@ -312,6 +353,13 @@ def simulate_market_updates():
 
 
 if __name__ == '__main__':
+    import os
+    if os.path.exists('/tmp/maxtrader_kill_switch.lock'):
+        state.safety_status['kill_switch'] = True
+        print("\n⚠️  KILL SWITCH LOCK FILE DETECTED")
+        print("⚠️  Trading will remain HALTED until manual reset")
+        print("⚠️  Use reset code: RESET2025\n")
+    
     threading.Thread(target=simulate_market_updates, daemon=True).start()
     
     print("\n" + "="*60)
@@ -319,6 +367,7 @@ if __name__ == '__main__':
     print("="*60)
     print(f"📊 Dashboard URL: http://0.0.0.0:5000")
     print(f"🔔 Pushover Notifications: {'ENABLED' if notifier.enabled else 'DISABLED'}")
+    print(f"🛑 Kill Switch: {'ACTIVE (TRADING HALTED)' if state.safety_status['kill_switch'] else 'Ready'}")
     print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*60 + "\n")
     
