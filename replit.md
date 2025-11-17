@@ -4,13 +4,13 @@
 
 MaxTrader is an **intraday NASDAQ trading research engine** built on a wave-based Renko framework with multi-timeframe confluence analysis. The system generates quality-driven trading signals by detecting wave impulses, analyzing retracement patterns, and combining daily/4H market context. All trades execute using options structures for defined risk.
 
-**Current Status (as of Nov 16, 2025):**
+**Current Status (as of Nov 17, 2025):**
 
 **Phase 1: Multi-Regime System (In Progress)**
 - ✅ **Normal Vol (VIX 13-30):** Wave-Renko strategy working - 43.5% WR, 9.39 PF, $2,249 PnL
 - ✅ **Ultra-Low Vol (VIX 8-13):** PA-confirmed VWAP mean-reversion complete
 - ✅ **EXTREME_CALM_PAUSE (VIX <8):** Trading pause implemented and tested
-- ⏭️ **High Vol (VIX >30):** Deferred to Phase 2 (see HIGH_VOL_DECISION.md)
+- ⏭️ **High Vol (VIX >30):** Deferred to Phase 2 (see HIGH_VOL_DECISION.md, SMARTMONEY_HOMMA_RESEARCH.md)
 - ⏭️ **Runtime Safety Layer:** Next implementation priority
 
 **Normal Vol Strategy (Validated):**
@@ -18,6 +18,12 @@ MaxTrader is an **intraday NASDAQ trading research engine** built on a wave-base
 - Trade Frequency: 23/month (quality-driven)
 - Total PnL: $2,249 over 90 days (Aug 18 - Nov 14, 2025)
 - Uses wave-based Renko + regime filtering (ICT structures disabled)
+
+**High Vol Research (Completed but Deferred):**
+- Tested 2 approaches: Sweep-reclaim (Sharpe -3.50) and Smart Money + Homma MTF (Sharpe 0.94)
+- Smart Money 1H/5min showed promise (75% WR, 3.32R avg) but only 2-4 trades/90 days
+- Insufficient trade frequency for production deployment
+- Phase 2: Will explore longer timeframes, multi-instrument deployment, or hybrid integration
 
 ## User Preferences
 
