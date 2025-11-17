@@ -1,0 +1,3 @@
+exit_method,pnl_sum,pnl_mean,pnl_median,pnl_std,slippage_vs_mid_mean,slippage_vs_mid_median,slippage_vs_mid_max,slippage_pct_mean,slippage_pct_median,slippage_pct_max,latency_ms_mean,latency_ms_median,latency_ms_max,success_sum,trade_id_count,win_rate,profit_factor
+split_verticals,11980.34,119.8,127.23,84.64,5.01,5.02,10.63,2.42,2.28,6.52,0.58,0.51,1.47,100,100,90.0,35.755992248446645
+whole_fly,1411.91,14.12,4.55,80.98,4.7,3.92,13.63,3.92,3.95,4.99,517.88,541.99,787.57,100,100,52.0,1.5439551695449134

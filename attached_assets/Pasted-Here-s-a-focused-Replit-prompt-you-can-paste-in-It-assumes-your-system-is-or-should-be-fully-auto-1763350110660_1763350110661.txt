@@ -1,0 +1,195 @@
+Here’s a focused Replit prompt you can paste in.
+It assumes your system is (or should be) fully automated and that butterflies are used as high R:R convexity structures, exited via vertical splits.
+
+⸻
+
+You are an experienced execution-engine and options-algo engineer working in the MaxTrader v4 codebase.
+
+OBJECTIVE
+	1.	Implement an automated butterfly exit router that always exits butterflies by splitting them into two vertical spreads, not as a single complex order.
+	2.	Integrate this into the execution engine (for both live and backtest modes).
+	3.	Backtest and compare:
+	•	Whole-butterfly exits vs
+	•	Split-as-verticals exits
+using realistic slippage/spread assumptions.
+	4.	Generate a detailed report file (CSV and markdown/HTML) with the results so it can be downloaded and reviewed.
+
+This work assumes 100% automated trading — there is no manual intervention.
+
+⸻
+
+1. Butterfly Exit Router – Requirements
+
+You must create a module, e.g.:
+
+execution/
+    butterfly_exit_router.py
+
+1.1 Interface
+
+Expose a main function/class method like:
+
+class ButterflyExitRouter:
+    def exit_butterfly(self, position, market_data, risk_config) -> ExitResult:
+        ...
+
+Where:
+	•	position contains:
+	•	symbol
+	•	legs: list of {type: 'C'/'P', strike, qty, side: 'long'/'short', expiry}
+	•	net debit/credit
+	•	entry_time
+	•	current Greeks (optional)
+	•	market_data provides:
+	•	best bid/ask for each leg
+	•	mid prices
+	•	current underlying price
+	•	risk_config includes:
+	•	max acceptable slippage per leg / per structure
+	•	max time to keep partial exposure open (ms)
+	•	routing preferences
+
+ExitResult should include:
+	•	actual fills (per leg / per spread)
+	•	realized PnL
+	•	realized slippage vs mid and vs theoretical fly price
+	•	timing (latency between first and last fill)
+
+1.2 Behavior
+
+Given a long butterfly or broken-wing fly, the router must:
+	1.	Decompose the fly into two vertical spreads:
+Example for calls:
+	•	Long fly: +K1C, -2K2C, +K3C
+	•	Decompose into:
+	•	Spread A: +K1C / -K2C
+	•	Spread B: -K2C / +K3C
+The exact decomposition should be generic:
+	•	Sort legs by strike,
+	•	Pair them into two verticals that reconstruct the fly.
+	2.	Close the high-value vertical first:
+	•	Identify which vertical currently holds more extrinsic/intrinsic value.
+	•	Submit an exit order for that spread first (marketable limit at/near mid with slippage guardrails).
+	3.	Immediately close the second vertical:
+	•	Once Spread A is filled (or partially filled within tolerance),
+	•	Submit exit order for Spread B, with same slippage protections.
+	4.	Automated safeguards (NO humans involved):
+	•	If slippage > configured max, cancel/replace with alternative limit or fallback logic.
+	•	Enforce maximum time between closing first and second spread, e.g. 50–500 ms.
+	•	If second leg cannot be filled reasonably, the router must:
+	•	log detailed diagnostics,
+	•	consider hedging via underlying if configured (optional),
+	•	avoid leaving unhedged risk.
+	5.	Never try to exit the entire butterfly as a single multi-leg order in live execution.
+That behavior must be disabled or reserved for simulation only.
+
+⸻
+
+2. Integration with Execution Engine
+
+Integrate ButterflyExitRouter into the main execution pipeline:
+	•	Modify the execution engine so that whenever:
+	•	A butterfly position hits its exit conditions (price target, time-based rule, ATR-based exit, etc.),
+	•	The engine calls:
+
+butterfly_exit_router.exit_butterfly(position, market_data, risk_config)
+
+
+	•	Ensure the router is used in both:
+	•	Backtest mode (simulate fills with realistic bid/ask/spread assumptions),
+	•	Live/paper mode (route real orders via broker API).
+
+You may need a small abstraction, e.g. OrderExecutor, that the router can call to place/cancel/replace spread orders.
+
+⸻
+
+3. Backtest Design – Whole Fly vs Split-Exit
+
+Implement a dedicated backtest script (e.g. backtests/backtest_butterfly_exits.py) that does the following:
+
+3.1 Scenarios
+
+For a representative sample of strategies that use butterflies (e.g. your OTM leveraged convexity trades):
+	•	Run two versions of the backtest over the same signals:
+	1.	Whole-fly exit:
+	•	Exit butterflies with a single multi-leg order at:
+	•	mid price minus X% hair-cut,
+or
+	•	natural bid (whichever is more realistic).
+	2.	Split-vertical exit:
+	•	Use ButterflyExitRouter to exit via two verticals, as described above.
+
+3.2 Data & Assumptions
+	•	Use historical option quotes (if available) or a synthetic model:
+	•	use underlying minute/tick prices,
+	•	option greeks approximations,
+	•	spreads as a function of moneyness, DTE, and volatility.
+	•	Slippage model:
+	•	configure realistic spreads per leg,
+	•	add randomization (within bounds) to simulate fill variance.
+
+3.3 Metrics to Compare
+
+For each approach (whole-fly vs split-exit), compute:
+	•	Total PnL
+	•	PnL per trade
+	•	Max drawdown
+	•	Average realized R:R
+	•	Average and median slippage per trade (absolute and % of PnL)
+	•	Exit latency (simulated time between signal and fully closed position)
+	•	Rate of “missed” exits or forced poor fills
+
+Break results down by:
+	•	Underlying (SPY/QQQ/IWM)
+	•	DTE bucket (0DTE, 1–3 DTE, 5–15 DTE)
+	•	Volatility regime (normal, high, low) if possible
+
+⸻
+
+4. Report Generation (Downloadable)
+
+The backtest script must:
+	1.	Save a CSV file with detailed trade-level and aggregate metrics:
+e.g. reports/butterfly_exit_comparison.csv:
+Columns might include:
+	•	trade_id
+	•	symbol
+	•	entry_time
+	•	exit_method (whole_fly / split_verticals)
+	•	entry_debit
+	•	exit_credit
+	•	PnL
+	•	slippage_vs_mid
+	•	latency_ms
+	•	regime (normal/high/low vol)
+	•	etc.
+	2.	Generate a summary report in markdown or HTML for download, e.g.:
+reports/butterfly_exit_report.md (or .html), containing:
+	•	Overview of methodology
+	•	Summary tables:
+	•	per exit method
+	•	per underlying
+	•	per regime
+	•	Key statistics:
+	•	total PnL, PF, WR, DD, avg slippage
+	•	Charts (if possible):
+	•	equity curves for each exit method
+	•	PnL distribution
+	•	slippage distribution
+	3.	Ensure these files are written to a known folder (e.g. reports/) so they can be easily downloaded from the environment.
+
+⸻
+
+5. Deliverables
+	1.	execution/butterfly_exit_router.py implementing the split-exit logic.
+	2.	Integration of ButterflyExitRouter into the main execution engine for butterfly exits.
+	3.	backtests/backtest_butterfly_exits.py (or similar) that:
+	•	Runs whole-fly vs split-exit comparison,
+	•	Produces trade-by-trade results,
+	•	Writes detailed CSV + markdown/HTML summary to reports/.
+	4.	A short README section or comments summarizing:
+	•	How the router works,
+	•	How to run the backtest script,
+	•	Where to find the generated report files for download.
+
+The goal is to quantitatively prove that exiting butterflies as composed verticals (with automated routing) is superior in realized PnL and slippage for THIS system, in THIS codebase, before making it the default behavior.
