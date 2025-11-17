@@ -135,13 +135,17 @@ def calculate_metrics(df_trades: pd.DataFrame):
 
 
 def main():
+    import sys
+    
+    data_file = sys.argv[1] if len(sys.argv) > 1 else 'data/QQQ_1m_real.csv'
+    
     print("=" * 90)
     print("SMART MONEY + HOMMA MTF BACKTEST")
-    print("Testing all 8 HTF/LTF combinations on QQQ (Aug 18 - Nov 14, 2025)")
+    print(f"Testing all 8 HTF/LTF combinations on {data_file}")
     print("=" * 90)
     print()
     
-    provider = CSVDataProvider('data/QQQ_1m_real.csv')
+    provider = CSVDataProvider(data_file)
     df_1m = provider.load_bars()
     
     htf_list = ['30min', '1h', '2h', '4h']
