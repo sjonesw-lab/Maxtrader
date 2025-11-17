@@ -4,6 +4,8 @@
 
 MaxTrader is an intraday NASDAQ trading research engine designed for quality-driven trading signals using a wave-based Renko framework and multi-timeframe confluence analysis. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system currently features a multi-regime architecture with a validated Normal Vol strategy (43.5% WR, 9.39 PF) and robust runtime safety layers, with ongoing research into high-volatility environments.
 
+The system now includes a professional real-time trading dashboard with WebSocket-based live updates, comprehensive safety monitoring, and integrated Pushover notifications for critical alerts.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
@@ -54,6 +56,36 @@ Simulates trade execution, constructs options positions, and holds until targets
 
 The system utilizes a comprehensive testing strategy including unit tests for each module (35+ passing tests), regression tests for critical logic, and fixtures to verify calculations.
 
+### Professional Trading Dashboard
+
+A production-ready web dashboard (`dashboard/app.py`) provides real-time monitoring and control:
+
+**Core Features:**
+- **Real-Time WebSocket Updates**: Live P&L tracking, position monitoring, and regime status via Socket.IO
+- **Account Overview**: Current balance, daily P&L, total P&L with automatic color coding
+- **Safety Manager Visualization**: Visual progress bars for daily loss limits and position usage
+- **Circuit Breaker Monitoring**: Live status of rapid loss, error rate, and drawdown circuit breakers
+- **Performance Metrics**: Total trades, win rate, profit factor, Sharpe ratio
+- **Interactive P&L Chart**: Real-time charting of daily P&L with Chart.js
+- **Kill Switch**: Emergency button to immediately halt all trading
+- **Professional UI**: Dark theme optimized for trading environments, responsive grid layout
+
+**Pushover Notification System** (`dashboard/notifier.py`):
+- Circuit breaker triggers (high priority, siren sound)
+- Daily loss limit alerts (high priority, persistent sound)
+- Trade execution notifications (normal priority)
+- Trade exit alerts with P&L
+- System error alerts (high priority)
+- End-of-day summaries
+
+**Technical Stack:**
+- **Backend**: Flask web framework with Flask-SocketIO for WebSocket communication
+- **Frontend**: Vanilla JavaScript with Chart.js for visualization
+- **Real-Time Updates**: Background thread simulates market updates (ready for live data integration)
+- **Security**: Session secrets managed via Replit Secrets, CORS enabled for iframe embedding
+
+The dashboard runs on port 5000 and is configured as the primary workflow for the project.
+
 ## External Dependencies
 
 ### Python Libraries
@@ -64,7 +96,9 @@ The system utilizes a comprehensive testing strategy including unit tests for ea
 -   **pyyaml**: Configuration management.
 -   **pytest**: Testing framework.
 -   **python-dotenv**: Environment variable management.
--   **requests**: HTTP library for future API integrations.
+-   **requests**: HTTP library for API integrations and Pushover notifications.
+-   **flask**: Web framework for dashboard server.
+-   **flask-socketio**: WebSocket support for real-time dashboard updates.
 
 ### Future Integrations (Architected For)
 

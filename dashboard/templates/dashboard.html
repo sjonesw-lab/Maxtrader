@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MaxTrader | Professional Trading Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <h1 class="logo">MaxTrader</h1>
+                <span class="tagline">Multi-Regime Options Engine v4</span>
+            </div>
+            <div class="header-center">
+                <div class="regime-indicator" id="regimeIndicator">
+                    <span class="regime-label">REGIME</span>
+                    <span class="regime-value" id="regimeValue">NORMAL_VOL</span>
+                    <span class="vix-value" id="vixValue">VIX: 18.5</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="system-status" id="systemStatus">
+                    <div class="status-dot status-healthy"></div>
+                    <span>HEALTHY</span>
+                </div>
+                <div class="timestamp" id="timestamp">--:--:--</div>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="dashboard-grid">
+            <!-- Account Overview -->
+            <div class="card account-card">
+                <div class="card-header">
+                    <h2>Account Overview</h2>
+                </div>
+                <div class="card-body">
+                    <div class="metric-row">
+                        <div class="metric">
+                            <span class="metric-label">Account Balance</span>
+                            <span class="metric-value large" id="accountBalance">$50,000.00</span>
+                        </div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric">
+                            <span class="metric-label">Daily P&L</span>
+                            <span class="metric-value pnl" id="dailyPnl">$0.00</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Total P&L</span>
+                            <span class="metric-value pnl" id="totalPnl">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Safety Status -->
+            <div class="card safety-card">
+                <div class="card-header">
+                    <h2>Safety Manager</h2>
+                    <button class="btn-icon" id="killSwitchBtn" title="Emergency Kill Switch">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="safety-metric">
+                        <span class="safety-label">Daily Loss Limit</span>
+                        <div class="safety-bar">
+                            <div class="safety-bar-fill" id="lossLimitBar" style="width: 0%"></div>
+                        </div>
+                        <span class="safety-text" id="lossLimitText">$0 / $1,000</span>
+                    </div>
+                    <div class="safety-metric">
+                        <span class="safety-label">Position Usage</span>
+                        <div class="safety-bar">
+                            <div class="safety-bar-fill" id="positionBar" style="width: 0%"></div>
+                        </div>
+                        <span class="safety-text" id="positionText">0 / 3 positions</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Circuit Breakers -->
+            <div class="card breakers-card">
+                <div class="card-header">
+                    <h2>Circuit Breakers</h2>
+                </div>
+                <div class="card-body">
+                    <div class="breaker-row" id="rapidLossBreaker">
+                        <div class="breaker-icon">⚡</div>
+                        <div class="breaker-info">
+                            <span class="breaker-name">Rapid Loss</span>
+                            <span class="breaker-threshold">2% in 15min</span>
+                        </div>
+                        <div class="breaker-status">OK</div>
+                    </div>
+                    <div class="breaker-row" id="errorRateBreaker">
+                        <div class="breaker-icon">⚠️</div>
+                        <div class="breaker-info">
+                            <span class="breaker-name">Error Rate</span>
+                            <span class="breaker-threshold">3 errors in 5min</span>
+                        </div>
+                        <div class="breaker-status">OK</div>
+                    </div>
+                    <div class="breaker-row" id="drawdownBreaker">
+                        <div class="breaker-icon">📉</div>
+                        <div class="breaker-info">
+                            <span class="breaker-name">Drawdown</span>
+                            <span class="breaker-threshold">5% from peak</span>
+                        </div>
+                        <div class="breaker-status">OK</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="card performance-card">
+                <div class="card-header">
+                    <h2>Performance</h2>
+                </div>
+                <div class="card-body">
+                    <div class="perf-grid">
+                        <div class="perf-metric">
+                            <span class="perf-label">Total Trades</span>
+                            <span class="perf-value" id="totalTrades">0</span>
+                        </div>
+                        <div class="perf-metric">
+                            <span class="perf-label">Win Rate</span>
+                            <span class="perf-value" id="winRate">0.0%</span>
+                        </div>
+                        <div class="perf-metric">
+                            <span class="perf-label">Profit Factor</span>
+                            <span class="perf-value" id="profitFactor">0.00</span>
+                        </div>
+                        <div class="perf-metric">
+                            <span class="perf-label">Sharpe Ratio</span>
+                            <span class="perf-value" id="sharpeRatio">0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Open Positions -->
+            <div class="card positions-card">
+                <div class="card-header">
+                    <h2>Open Positions</h2>
+                </div>
+                <div class="card-body">
+                    <div id="positionsTable" class="positions-table">
+                        <div class="empty-state">No open positions</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trade History -->
+            <div class="card history-card">
+                <div class="card-header">
+                    <h2>Recent Trades</h2>
+                </div>
+                <div class="card-body">
+                    <div id="tradeHistory" class="trade-history">
+                        <div class="empty-state">No trades yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- P&L Chart -->
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h2>Daily P&L Chart</h2>
+                </div>
+                <div class="card-body">
+                    <canvas id="pnlChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Notifications Test -->
+            <div class="card notifications-card">
+                <div class="card-header">
+                    <h2>Pushover Notifications</h2>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-primary" id="testNotificationBtn">
+                        🔔 Send Test Notification
+                    </button>
+                    <div id="notificationStatus" class="notification-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="dashboard-footer">
+            <span>MaxTrader v4.0 | Multi-Regime Options Engine | © 2025</span>
+            <span id="connectionStatus">Connected</span>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

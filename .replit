@@ -16,30 +16,24 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "backtest-wave"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "ict-3day-test"
+args = "dashboard"
 
 [[workflows.workflow]]
-name = "backtest-wave"
+name = "dashboard"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python main_backtest_wave.py"
+args = "python dashboard/app.py"
+waitForPort = 5000
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
 
-[[workflows.workflow]]
-name = "ict-3day-test"
-author = "agent"
+[[ports]]
+localPort = 5000
+externalPort = 80
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python test_ict_targets_3day.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
+[[ports]]
+localPort = 43395
+externalPort = 3000
