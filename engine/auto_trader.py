@@ -16,6 +16,8 @@ import pandas as pd
 import numpy as np
 
 from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -169,88 +171,118 @@ class AutomatedDualTrader:
         return signals
     
     def execute_conservative(self, signal: Dict, balance: float):
-        """Execute conservative strategy (100% longs, 3% risk)."""
+        """Execute conservative strategy - REAL Alpaca stock order (3% risk)."""
         risk_budget = balance * (self.conservative_risk_pct / 100)
         
-        # Simulated options: $2 premium estimate
-        premium_per_contract = 2.0
-        num_contracts = int(risk_budget / (premium_per_contract * 100))
-        num_contracts = max(1, min(num_contracts, 10))
+        # Calculate shares to buy with 3% of account
+        shares = int(risk_budget / signal['price'])
+        shares = max(1, shares)  # At least 1 share
         
-        total_cost = num_contracts * premium_per_contract * 100
-        
-        position = {
-            'strategy': 'conservative',
-            'entry_time': datetime.now(),
-            'entry_price': signal['price'],
-            'direction': signal['direction'],
-            'target_price': signal['target'],
-            'num_contracts': num_contracts,
-            'premium_paid': total_cost,
-            'atr': signal['atr'],
-            'status': 'open'
-        }
-        
-        self.positions['conservative'].append(position)
-        
-        # Notification
-        notifier.send_notification(
-            f"💼 CONSERVATIVE Entry\n"
-            f"{signal['direction']} {num_contracts} contracts\n"
-            f"Entry: ${signal['price']:.2f}\n"
-            f"Target: ${signal['target']:.2f}\n"
-            f"Risk: ${total_cost:.2f}",
-            title="Conservative Entry",
-            priority=0
-        )
-        
-        print(f"✅ Conservative {signal['direction']}: {num_contracts} contracts @ ${signal['price']:.2f}")
+        # Place REAL market order via Alpaca
+        try:
+            order_data = MarketOrderRequest(
+                symbol=self.symbol,
+                qty=shares,
+                side=OrderSide.BUY if signal['direction'] == 'LONG' else OrderSide.SELL,
+                time_in_force=TimeInForce.DAY
+            )
+            
+            order = self.trading_client.submit_order(order_data)
+            
+            position = {
+                'strategy': 'conservative',
+                'entry_time': datetime.now(),
+                'entry_price': signal['price'],
+                'direction': signal['direction'],
+                'target_price': signal['target'],
+                'shares': shares,
+                'cost': shares * signal['price'],
+                'atr': signal['atr'],
+                'status': 'open',
+                'order_id': str(order.id),
+                'alpaca_order': order
+            }
+            
+            self.positions['conservative'].append(position)
+            
+            # Notification
+            notifier.send_notification(
+                f"💼 CONSERVATIVE Entry (REAL ORDER)\n"
+                f"{signal['direction']} {shares} shares QQQ\n"
+                f"Entry: ${signal['price']:.2f}\n"
+                f"Target: ${signal['target']:.2f}\n"
+                f"Risk: ${shares * signal['price']:.2f}\n"
+                f"Order ID: {order.id}",
+                title="Conservative Entry",
+                priority=0
+            )
+            
+            print(f"✅ Conservative {signal['direction']}: {shares} shares @ ${signal['price']:.2f} [Order {order.id}]")
+            
+        except Exception as e:
+            print(f"❌ Conservative order failed: {e}")
+            notifier.send_notification(
+                f"Failed to place conservative order:\n{str(e)[:200]}",
+                title="⚠️ Order Error",
+                priority=2
+            )
     
     def execute_aggressive(self, signal: Dict, balance: float):
-        """Execute aggressive strategy (75% longs + 25% spreads, 4% risk)."""
+        """Execute aggressive strategy - REAL Alpaca stock order (4% risk)."""
         risk_budget = balance * (self.aggressive_risk_pct / 100)
         
-        long_budget = risk_budget * 0.75
-        spread_budget = risk_budget * 0.25
+        # Use 4% of account for larger position
+        shares = int(risk_budget / signal['price'])
+        shares = max(1, shares)
         
-        long_premium = 2.0
-        spread_cost = 0.8
-        
-        num_longs = int(long_budget / (long_premium * 100))
-        num_spreads = int(spread_budget / (spread_cost * 100))
-        
-        num_longs = max(1, min(num_longs, 10))
-        num_spreads = max(1, min(num_spreads, 10))
-        
-        total_cost = (num_longs * long_premium * 100) + (num_spreads * spread_cost * 100)
-        
-        position = {
-            'strategy': 'aggressive',
-            'entry_time': datetime.now(),
-            'entry_price': signal['price'],
-            'direction': signal['direction'],
-            'target_price': signal['target'],
-            'num_longs': num_longs,
-            'num_spreads': num_spreads,
-            'total_cost': total_cost,
-            'atr': signal['atr'],
-            'status': 'open'
-        }
-        
-        self.positions['aggressive'].append(position)
-        
-        # Notification
-        notifier.send_notification(
-            f"🚀 AGGRESSIVE Entry\n"
-            f"{signal['direction']} {num_longs}L+{num_spreads}S\n"
-            f"Entry: ${signal['price']:.2f}\n"
-            f"Target: ${signal['target']:.2f}\n"
-            f"Risk: ${total_cost:.2f}",
-            title="Aggressive Entry",
-            priority=0
-        )
-        
-        print(f"✅ Aggressive {signal['direction']}: {num_longs} longs + {num_spreads} spreads @ ${signal['price']:.2f}")
+        # Place REAL market order via Alpaca
+        try:
+            order_data = MarketOrderRequest(
+                symbol=self.symbol,
+                qty=shares,
+                side=OrderSide.BUY if signal['direction'] == 'LONG' else OrderSide.SELL,
+                time_in_force=TimeInForce.DAY
+            )
+            
+            order = self.trading_client.submit_order(order_data)
+            
+            position = {
+                'strategy': 'aggressive',
+                'entry_time': datetime.now(),
+                'entry_price': signal['price'],
+                'direction': signal['direction'],
+                'target_price': signal['target'],
+                'shares': shares,
+                'cost': shares * signal['price'],
+                'atr': signal['atr'],
+                'status': 'open',
+                'order_id': str(order.id),
+                'alpaca_order': order
+            }
+            
+            self.positions['aggressive'].append(position)
+            
+            # Notification
+            notifier.send_notification(
+                f"🚀 AGGRESSIVE Entry (REAL ORDER)\n"
+                f"{signal['direction']} {shares} shares QQQ\n"
+                f"Entry: ${signal['price']:.2f}\n"
+                f"Target: ${signal['target']:.2f}\n"
+                f"Risk: ${shares * signal['price']:.2f}\n"
+                f"Order ID: {order.id}",
+                title="Aggressive Entry",
+                priority=0
+            )
+            
+            print(f"✅ Aggressive {signal['direction']}: {shares} shares @ ${signal['price']:.2f} [Order {order.id}]")
+            
+        except Exception as e:
+            print(f"❌ Aggressive order failed: {e}")
+            notifier.send_notification(
+                f"Failed to place aggressive order:\n{str(e)[:200]}",
+                title="⚠️ Order Error",
+                priority=2
+            )
     
     def check_exits(self, current_price: float):
         """Check and execute exits for both strategies."""
@@ -289,62 +321,69 @@ class AutomatedDualTrader:
                 self.close_position(pos, current_price, hit_target)
     
     def close_position(self, position: Dict, exit_price: float, hit_target: bool):
-        """Close a position and calculate P&L."""
+        """Close a position - REAL Alpaca close order."""
         strategy = position['strategy']
         
-        # Calculate P&L based on actual price movement
-        price_change = abs(exit_price - position['entry_price'])
-        
-        if strategy == 'conservative':
-            if hit_target:
-                # Target hit: full intrinsic value
-                exit_value = price_change * 100 * position['num_contracts']
-            else:
-                # Partial: estimate remaining value
-                exit_value = position['premium_paid'] * 0.3  # Time decay
+        # Place REAL close order via Alpaca
+        try:
+            # Reverse the original order direction
+            close_side = OrderSide.SELL if position['direction'] == 'LONG' else OrderSide.BUY
             
-            pnl = exit_value - position['premium_paid']
-        
-        else:  # aggressive
-            if hit_target:
-                # Longs get full movement, spreads get capped
-                long_value = price_change * 100 * position['num_longs']
-                spread_value = min(price_change, 5.0) * 100 * position['num_spreads']
-                exit_value = long_value + spread_value
-            else:
-                exit_value = position['total_cost'] * 0.3
+            order_data = MarketOrderRequest(
+                symbol=self.symbol,
+                qty=position['shares'],
+                side=close_side,
+                time_in_force=TimeInForce.DAY
+            )
             
-            pnl = exit_value - position['total_cost']
-        
-        # Update position
-        position['status'] = 'closed'
-        position['exit_time'] = datetime.now()
-        position['exit_price'] = exit_price
-        position['pnl'] = pnl
-        position['hit_target'] = hit_target
-        
-        # Update stats
-        self.stats[strategy]['trades'] += 1
-        self.stats[strategy]['total_pnl'] += pnl
-        if pnl > 0:
-            self.stats[strategy]['wins'] += 1
-        
-        # Notification
-        emoji = "🎯" if hit_target else "⏱️"
-        color = "🟢" if pnl > 0 else "🔴"
-        
-        notifier.send_notification(
-            f"{emoji} {strategy.upper()} Exit {color}\n"
-            f"P&L: ${pnl:+.2f}\n"
-            f"Exit: ${exit_price:.2f}\n"
-            f"{'Target HIT' if hit_target else 'Time limit'}",
-            title=f"{strategy.title()} Exit",
-            priority=0
-        )
-        
-        print(f"{color} {strategy.upper()} closed: ${pnl:+.2f} ({'target' if hit_target else 'time'})")
-        
-        self.save_state()
+            close_order = self.trading_client.submit_order(order_data)
+            
+            # Calculate actual P&L from stock position
+            if position['direction'] == 'LONG':
+                pnl = (exit_price - position['entry_price']) * position['shares']
+            else:  # SHORT
+                pnl = (position['entry_price'] - exit_price) * position['shares']
+            
+            # Update position
+            position['status'] = 'closed'
+            position['exit_time'] = datetime.now()
+            position['exit_price'] = exit_price
+            position['pnl'] = pnl
+            position['hit_target'] = hit_target
+            position['close_order_id'] = str(close_order.id)
+            
+            # Update stats
+            self.stats[strategy]['trades'] += 1
+            self.stats[strategy]['total_pnl'] += pnl
+            if pnl > 0:
+                self.stats[strategy]['wins'] += 1
+            
+            # Notification
+            emoji = "🎯" if hit_target else "⏱️"
+            color = "🟢" if pnl > 0 else "🔴"
+            
+            notifier.send_notification(
+                f"{emoji} {strategy.upper()} Exit {color} (REAL CLOSE)\n"
+                f"P&L: ${pnl:+.2f}\n"
+                f"Entry: ${position['entry_price']:.2f} → Exit: ${exit_price:.2f}\n"
+                f"Shares: {position['shares']}\n"
+                f"{'Target HIT' if hit_target else 'Time limit'}\n"
+                f"Close Order: {close_order.id}",
+                title=f"{strategy.title()} Exit",
+                priority=0
+            )
+            
+            print(f"{color} {strategy.upper()} closed: ${pnl:+.2f} ({position['shares']} shares, {'target' if hit_target else 'time'}) [Close Order {close_order.id}]")
+            
+            self.save_state()
+            
+        except Exception as e:
+            print(f"❌ Failed to close {strategy} position: {e}")
+            notifier.send_notification(
+                f"Failed to close {strategy} position:\n{str(e)[:200]}",
+                title="⚠️ Close Error",
+                priority=2
+            )
     
     def save_state(self):
         """Save current state to file."""

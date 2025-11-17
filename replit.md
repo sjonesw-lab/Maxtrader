@@ -4,7 +4,7 @@
 
 MaxTrader is an intraday NASDAQ trading research engine designed for quality-driven trading signals using a wave-based Renko framework and multi-timeframe confluence analysis. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system features a multi-regime architecture with robust runtime safety layers and is currently under active development and testing to validate trading performance.
 
-The system now includes a professional real-time trading dashboard with WebSocket-based live updates, comprehensive safety monitoring, and integrated Pushover notifications for critical alerts.
+The system now includes a professional real-time trading dashboard with WebSocket-based live updates, comprehensive safety monitoring, and integrated Pushover notifications for critical alerts. **The auto trader (`engine/auto_trader.py`) places REAL market orders via Alpaca paper trading API**, executing both Conservative (3% risk) and Aggressive (4% risk) strategies simultaneously with automatic entry and exit management. Note: Alpaca paper trading does not support options, so the system uses QQQ stock positions with equivalent dollar risk to validate signal detection and P&L tracking.
 
 ## Verified Performance (November 2025)
 

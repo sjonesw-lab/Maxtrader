@@ -281,41 +281,29 @@ def simulate_market_updates():
         
         cycle_count += 1
         
-        pnl_change = random.uniform(-50, 100)
-        state.daily_pnl += pnl_change
-        state.total_pnl += pnl_change
-        state.account_balance = 50000 + state.total_pnl
+        # Update account balance from REAL P&L
+        state.account_balance = 100000 + state.total_pnl  # Alpaca paper starts at $100k
+        state.daily_pnl = state.total_pnl  # For now, treat all P&L as daily
         
         peak_balance = max(peak_balance, state.account_balance)
         
-        state.vix_level = max(8, min(40, state.vix_level + random.uniform(-0.5, 0.5)))
-        
-        if state.vix_level < 13:
-            state.current_regime = "ULTRA_LOW_VOL"
-        elif state.vix_level < 30:
-            state.current_regime = "NORMAL_VOL"
-        else:
-            state.current_regime = "HIGH_VOL"
+        # VIX would come from real data in production
+        state.vix_level = 15.0  # Default placeholder
+        state.current_regime = "NORMAL_VOL"
         
         state.system_health['uptime_seconds'] += 5
         state.system_health['last_heartbeat'] = datetime.now().isoformat()
         
-        for position in state.open_positions:
-            position['current_pnl'] = random.uniform(-50, 150)
-        
-        if len(state.open_positions) > 0:
-            broadcast_update('positions_update', {
-                'positions': state.open_positions
-            })
-        
-        if state.daily_pnl < 0:
-            state.safety_status['current_loss'] = abs(state.daily_pnl)
+        # Update safety status based on REAL P&L
+        if state.total_pnl < 0:
+            state.safety_status['current_loss'] = abs(state.total_pnl)
         else:
             state.safety_status['current_loss'] = 0
         
+        total_open = state.conservative['active_positions'] + state.aggressive['active_positions']
         state.safety_status['active_positions'] = min(
             state.safety_status['max_positions'],
-            len(state.open_positions)
+            total_open
         )
         
         loss_percent = (state.safety_status['current_loss'] / state.safety_status['daily_loss_limit']) * 100
