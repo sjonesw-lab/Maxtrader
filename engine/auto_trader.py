@@ -58,6 +58,7 @@ class AutomatedDualTrader:
             'conservative': {'trades': 0, 'wins': 0, 'total_pnl': 0.0},
             'aggressive': {'trades': 0, 'wins': 0, 'total_pnl': 0.0}
         }
+        self.trade_history = []  # Track all closed trades
         
         # Market data buffer
         self.bars_buffer = pd.DataFrame()
@@ -65,6 +66,9 @@ class AutomatedDualTrader:
         
         # Load previous state if exists
         self.load_state()
+        
+        # Save initial state to create the file
+        self.save_state()
     
     def get_account_balance(self) -> float:
         """Get current account balance (paper trading)."""
@@ -395,6 +399,24 @@ class AutomatedDualTrader:
         if pnl > 0:
             self.stats[strategy]['wins'] += 1
         
+        # Add to trade history
+        self.trade_history.append({
+            'timestamp': datetime.now().isoformat(),
+            'strategy': strategy,
+            'symbol': self.symbol,
+            'direction': position['direction'],
+            'option_contract': position['option_contract'],
+            'num_contracts': position['num_contracts'],
+            'entry_price': position['entry_price'],
+            'exit_price': exit_price,
+            'premium_paid': position['premium_paid'],
+            'total_exit_value': total_exit_value,
+            'pnl': pnl,
+            'hit_target': hit_target,
+            'entry_time': position['entry_time'].isoformat() if hasattr(position['entry_time'], 'isoformat') else str(position['entry_time']),
+            'exit_time': datetime.now().isoformat()
+        })
+        
         # Notification
         emoji = "🎯" if hit_target else "⏱️"
         color = "🟢" if pnl > 0 else "🔴"
@@ -425,6 +447,7 @@ class AutomatedDualTrader:
             'starting_balance': self.starting_balance,
             'positions': self.positions,
             'stats': self.stats,
+            'trade_history': self.trade_history,
             'last_updated': datetime.now().isoformat()
         }
         with open(self.state_file, 'w') as f:
@@ -439,7 +462,8 @@ class AutomatedDualTrader:
                     self.account_balance = state.get('account_balance', self.starting_balance)
                     self.positions = state.get('positions', {'conservative': [], 'aggressive': []})
                     self.stats = state.get('stats', self.stats)
-                    print(f"✅ State loaded - Balance: ${self.account_balance:.2f}, Stats: {self.stats}")
+                    self.trade_history = state.get('trade_history', [])
+                    print(f"✅ State loaded - Balance: ${self.account_balance:.2f}, Trades: {len(self.trade_history)}")
         except Exception as e:
             print(f"⚠️ Could not load state: {e}")
     
