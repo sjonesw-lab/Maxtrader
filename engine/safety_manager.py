@@ -285,7 +285,16 @@ class SafetyManager:
     def _get_regime_config(self, regime: str, key: str):
         """Get regime-specific config value with fallback to default"""
         regime_config = self.config.get('regime_overrides', {}).get(regime, {})
-        return regime_config.get(key, self.config['position'][key])
+        if key in regime_config:
+            return regime_config[key]
+        
+        # Try position config first, then validation config
+        if key in self.config.get('position', {}):
+            return self.config['position'][key]
+        elif key in self.config.get('validation', {}):
+            return self.config['validation'][key]
+        else:
+            raise KeyError(f"Config key '{key}' not found in position or validation sections")
     
     # =========================================================================
     # POST-TRADE MONITORING
