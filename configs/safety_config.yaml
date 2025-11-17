@@ -1,0 +1,157 @@
+# MaxTrader Runtime Safety Configuration
+# Critical limits and circuit breakers for production trading
+
+# =============================================================================
+# ACCOUNT & POSITION LIMITS
+# =============================================================================
+account:
+  # Maximum account balance to risk (fail-safe if account size exceeds this)
+  max_account_size: 100000.0
+  
+  # Daily loss limits (percentage of account balance)
+  max_daily_loss_pct: 0.02  # 2% max daily loss
+  max_daily_loss_absolute: 2000.0  # $2,000 absolute cap
+  
+  # Weekly/monthly loss limits
+  max_weekly_loss_pct: 0.05  # 5% max weekly loss
+  max_monthly_loss_pct: 0.10  # 10% max monthly loss
+
+position:
+  # Maximum number of concurrent open positions
+  max_concurrent_positions: 3
+  
+  # Maximum position size (percentage of account)
+  max_position_size_pct: 0.01  # 1% of account per trade
+  max_position_size_absolute: 1000.0  # $1,000 absolute cap
+  
+  # Maximum options premium per trade
+  max_premium_per_trade: 500.0  # $500 max premium
+  
+  # Maximum exposure (all positions combined)
+  max_total_exposure_pct: 0.03  # 3% total exposure cap
+
+# =============================================================================
+# CIRCUIT BREAKERS
+# =============================================================================
+circuit_breakers:
+  # Rapid loss detection (pause if X losses in Y minutes)
+  rapid_loss:
+    enabled: true
+    max_losses: 3  # Max consecutive losses
+    time_window_minutes: 30
+    pause_duration_minutes: 60  # Cool-down period
+  
+  # Error rate limiting (pause if too many errors)
+  error_rate:
+    enabled: true
+    max_errors: 5  # Max errors in time window
+    time_window_minutes: 10
+    pause_duration_minutes: 30
+  
+  # Drawdown protection (pause if drawdown exceeds threshold)
+  drawdown:
+    enabled: true
+    max_drawdown_pct: 0.03  # 3% drawdown triggers pause
+    pause_duration_minutes: 120  # 2 hour cool-down
+
+# =============================================================================
+# TRADE VALIDATION
+# =============================================================================
+validation:
+  # Minimum time between trades (prevent over-trading)
+  min_seconds_between_trades: 60  # 1 minute minimum
+  
+  # Maximum trades per day (across all strategies)
+  max_trades_per_day: 10
+  
+  # Maximum trades per strategy per day
+  max_trades_per_strategy_per_day: 5
+  
+  # Require manual approval for trades exceeding this size
+  manual_approval_threshold: 500.0  # $500
+  
+  # Risk-reward validation
+  min_reward_risk_ratio: 1.5  # Minimum 1.5:1 R:R
+
+# =============================================================================
+# HEALTH CHECKS
+# =============================================================================
+health_checks:
+  # API connectivity
+  api:
+    enabled: true
+    check_interval_seconds: 60
+    max_consecutive_failures: 3
+  
+  # Data freshness (pause if data is stale)
+  data_freshness:
+    enabled: true
+    max_staleness_seconds: 300  # 5 minutes
+  
+  # Market hours validation
+  market_hours:
+    enabled: true
+    # Only trade during these hours (America/New_York)
+    start_time: "09:30"
+    end_time: "15:45"  # Stop 15 min before close
+    
+  # System resources
+  system:
+    enabled: true
+    max_memory_usage_pct: 80  # Pause if memory >80%
+    max_cpu_usage_pct: 90  # Pause if CPU >90%
+
+# =============================================================================
+# EMERGENCY CONTROLS
+# =============================================================================
+emergency:
+  # Kill switch (manually set to true to pause all trading)
+  kill_switch: false
+  
+  # Safe mode (allow only position closes, no new entries)
+  safe_mode: false
+  
+  # Auto-shutdown on critical errors
+  auto_shutdown_on_critical: true
+  
+  # Emergency contact (not used by system, for documentation)
+  emergency_contact: "user@example.com"
+
+# =============================================================================
+# LOGGING & ALERTS
+# =============================================================================
+logging:
+  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  level: "INFO"
+  
+  # Save safety events to file
+  log_to_file: true
+  log_file_path: "logs/safety_events.log"
+  
+  # Alert on critical events
+  alert_on:
+    - circuit_breaker_triggered
+    - daily_loss_limit_exceeded
+    - health_check_failure
+    - kill_switch_activated
+
+# =============================================================================
+# REGIME-SPECIFIC OVERRIDES
+# =============================================================================
+regime_overrides:
+  # Allow regime-specific safety parameters
+  NORMAL_VOL:
+    max_trades_per_day: 10
+    max_concurrent_positions: 3
+  
+  ULTRA_LOW_VOL:
+    max_trades_per_day: 5
+    max_concurrent_positions: 2
+  
+  EXTREME_CALM_PAUSE:
+    max_trades_per_day: 0  # No trading
+    max_concurrent_positions: 0
+  
+  HIGH_VOL:
+    max_trades_per_day: 3  # Conservative
+    max_concurrent_positions: 1
