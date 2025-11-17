@@ -2,7 +2,7 @@
 
 ## Overview
 
-MaxTrader is an intraday NASDAQ trading research engine designed for quality-driven trading signals using a wave-based Renko framework and multi-timeframe confluence analysis. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system currently features a multi-regime architecture with a validated Normal Vol strategy (43.5% WR, 9.39 PF) and robust runtime safety layers, with ongoing research into high-volatility environments.
+MaxTrader is an intraday NASDAQ trading research engine designed for quality-driven trading signals using a wave-based Renko framework and multi-timeframe confluence analysis. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system features a multi-regime architecture with robust runtime safety layers and is currently under active development and testing to validate trading performance.
 
 The system now includes a professional real-time trading dashboard with WebSocket-based live updates, comprehensive safety monitoring, and integrated Pushover notifications for critical alerts.
 
