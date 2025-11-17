@@ -219,11 +219,19 @@ def run_backtest_on_month(data_path: Path) -> dict:
                 index=matching.index[0],
                 timestamp=ws.timestamp,
                 direction=ws.direction,
-                entry_price=ws.entry_price,
-                target_price=ws.target_price,
-                stop_loss=ws.stop_loss,
-                confidence=ws.confidence,
-                reason=ws.reason
+                spot=ws.spot,
+                target=ws.tp1,  # Use TP1 as primary target
+                source_session=None,
+                meta={
+                    'wave_height': ws.wave_height,
+                    'tp1': ws.tp1,
+                    'tp2': ws.tp2,
+                    'stop': ws.stop,
+                    'retrace_type': ws.retrace_type,
+                    'retrace_pct': ws.retrace_pct,
+                    'confidence': ws.meta['confidence'],
+                    'regime': ws.regime
+                }
             )
             signals.append(sig)
     
