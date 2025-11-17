@@ -1,0 +1,218 @@
+Here’s a drop-in prompt you can paste into Replit.
+It tells them exactly what to build and test, with the HTF/LTF combos you specified.
+
+⸻
+
+You are an experienced quant/algo engineer working in the MaxTrader research environment.
+
+GOAL
+
+Implement and backtest a standalone, multi-timeframe Smart Money + Homma candlestick strategy, using:
+	•	Higher timeframes (HTFs) for setup & targets:
+	•	30m, 1h, 2h, 4h
+	•	Lower timeframes (LTFs) for triggers & entries:
+	•	3m, 5m
+
+The strategy must NOT be integrated into the live MaxTrader pipeline yet.
+Its purpose is purely research: to determine whether it has enough statistical edge to be worth integrating later.
+
+⸻
+
+1. Strategy Concept (What to Implement)
+
+1.1 HTF Setup: Institutional Supply & Demand Zones
+
+On each HTF (30m, 1h, 2h, 4h):
+
+Detect supply/demand zones based on Smart Money concepts:
+	•	Patterns:
+	•	Drop–Base–Rally (DBR) → Demand
+	•	Rally–Base–Drop (RBD) → Supply
+	•	Rally–Base–Rally (RBR) → Demand continuation
+	•	Drop–Base–Drop (DBD) → Supply continuation
+	•	Zone definition:
+	•	Base: 1–3 small consolidation candles,
+	•	Impulse: strong directional move away from base.
+	•	Filters (the “4 pillars” – all must be passed for a zone to be used):
+	1.	Impulse strength:
+	•	Candles leaving the zone are large, clean, mostly same color, minimal wicks.
+	•	Implement as:
+	•	body ≥ k × average body (e.g. 1.5×) over last N bars,
+	•	wick/body ≤ threshold (e.g. 0.5).
+	2.	Freshness:
+	•	Zone has NOT been revisited/touched since it formed.
+	3.	Break of structure (BoS):
+	•	Move away from zone breaks a prior swing high/low or clear consolidation range on the HTF.
+	4.	Reward:risk ≥ 2:1:
+	•	Using:
+	•	Entry at zone boundary (for backtest),
+	•	Stop just beyond the zone,
+	•	Target at next obvious HTF structure level (next swing high/low / S/R),
+	•	Require RR ≥ 2.0 or skip that zone.
+
+These HTF zones define where we are willing to trade and what our HTF target is.
+
+1.2 LTF Trigger: Homma Candlestick Confirmation Inside HTF Zone
+
+For each HTF–LTF pair:
+	•	When LTF price returns to an HTF zone, do NOT enter immediately.
+	•	Only consider entering when one of these price action confirmation events occurs inside the HTF zone:
+
+Bullish confirmation (in Demand zone):
+	•	Hammer / Tonkachi (long lower wick, small body at top), OR
+	•	Bullish engulfing candle (body fully engulfs previous candle), OR
+	•	Harami + upside breakout (inside bar followed by break above mother candle), OR
+	•	Doji + strong bullish follow-through candle.
+
+Bearish confirmation (in Supply zone):
+	•	Shooting star / “falling star” (long upper wick, small body near low), OR
+	•	Bearish engulfing candle, OR
+	•	Harami + downside breakout, OR
+	•	Doji + strong bearish follow-through.
+
+Additionally, there should be evidence of failure (we don’t want “touch = entry”):
+	•	False break + reclaim:
+	•	Price trades beyond zone boundary, then closes back inside.
+	•	Or:
+	•	Micro BOS / MSB on LTF after returning to the zone
+(e.g., local swing low forms inside a demand zone, then price breaks above a local swing high).
+
+You can start with the simpler but robust rule:
+
+**Entry only when price has:
+	•	re-entered the HTF zone, AND
+	•	printed a reversal candle pattern inside the zone, AND
+	•	closed back inside the zone (false break/reclaim).**
+
+⸻
+
+2. Timeframe Combinations to Test
+
+You must test all combinations of HTF and LTF:
+	•	HTFs for setup & targets:
+	•	30-minute, 1-hour, 2-hour, 4-hour
+	•	LTFs for triggers:
+	•	3-minute, 5-minute
+
+That is a 4 × 2 grid:
+	1.	30m HTF setup, 3m trigger
+	2.	30m HTF setup, 5m trigger
+	3.	1h HTF setup, 3m trigger
+	4.	1h HTF setup, 5m trigger
+	5.	2h HTF setup, 3m trigger
+	6.	2h HTF setup, 5m trigger
+	7.	4h HTF setup, 3m trigger
+	8.	4h HTF setup, 5m trigger
+
+The entry & exit rules stay the same, only the timeframes used to identify zones and triggers change.
+
+⸻
+
+3. Instruments & Data
+
+At minimum test on:
+	•	QQQ (first priority for this project)
+	•	Ideally also SPY and one FX pair such as EURUSD
+
+Data:
+	•	Use consistent, good-quality historical 1m/3m/5m/30m/1h/2h/4h data (e.g. from Polygon / Alpaca / your existing data source).
+	•	You can derive lower TF bars from higher TF data and vice versa where needed.
+
+Test windows:
+	•	At least 6–12 months per instrument, including:
+	•	Normal volatility periods,
+	•	Some high-volatility periods,
+	•	Some lower-volatility periods.
+
+⸻
+
+4. Backtest Mechanics
+
+For each HTF/LTF combination and instrument:
+	1.	Detect HTF zones according to the S&D rules above.
+	2.	Wait for price to revisit those zones.
+	3.	On LTF, watch for the defined reversal patterns inside the zone.
+	4.	When confirmation occurs:
+	•	Entry: at LTF close (or slight buffer).
+	•	Stop: just beyond far side of the HTF zone.
+	•	Target: HTF-defined structure:
+	•	E.g., next HTF swing high/low, or a measured-risk TP level (≥2R).
+	5.	Record:
+	•	R multiple per trade,
+	•	Time-in-trade,
+	•	Whether entry was Demand/Buy or Supply/Sell,
+	•	Which HTF/LTF pair generated the signal.
+
+For now, test in underlying (not options) so that the PnL curve is clean and not polluted by IV/spread. We only care about R-multiples and structural edge here.
+
+⸻
+
+5. Metrics to Report
+
+Per instrument and per HTF/LTF combination, compute:
+	•	Number of trades
+	•	Win rate
+	•	Average R per trade (expectancy)
+	•	Profit factor
+	•	Max drawdown (in R or normalized)
+	•	Distribution of R (histogram or at least summary: % of trades > 1R, > 2R, etc.)
+	•	Average holding time (bars / minutes)
+
+Where possible, stratify by regime (if you have VIX or a volatility proxy available):
+	•	Normal volatility
+	•	High volatility
+	•	Low volatility
+
+⸻
+
+6. Acceptance / Evaluation Criteria
+
+This is research, not immediate integration.
+We are NOT assuming this strategy has edge. You are testing whether it does.
+
+For each HTF/LTF combination and instrument:
+	•	We consider it potentially interesting only if:
+	•	Win rate ≥ ~55–60%
+	•	Expectancy ≥ +0.2R per trade
+	•	Profit factor ≥ ~1.5
+	•	Drawdown profile acceptable (no extreme tail risk vs return)
+
+Compare it against:
+	1.	A simple baseline (e.g., random entries at zones with same exits)
+	2.	The existing Normal Vol MaxTrader strategy on the same symbols and period (if practical).
+
+⸻
+
+7. Implementation Notes
+	•	Implement this as a separate strategy module, e.g.:
+
+strategies/
+    smartmoney_homma_mtf.py
+
+
+	•	Expose a clean interface so it can be plugged into a generic backtest runner, e.g.:
+
+class SmartMoneyHommaMTF:
+    def on_new_bar(self, symbol, bar, htf_state, ltf_state):
+        ...
+
+
+	•	Do not integrate this into MaxTrader’s live strategies yet.
+	•	Once you have results, produce a short report / summary:
+	•	Which HTF/LTF pair(s) showed the best and most stable performance?
+	•	Is the strategy robust across assets?
+	•	Is it clearly additive (uncorrelated) to the existing NormalVol Renko system, or redundant?
+
+⸻
+
+8. Key Reminder
+
+Do not implement naive “zone touch = entry” or “2σ touch = entry” logic.
+
+Entries must be based on:
+	•	Price returning to a high-quality HTF zone, AND
+	•	A clear LTF price-action confirmation (Homma-style reversal candle + structural failure) inside the zone.
+
+We want to know if that full combination — HTF S&D footprints + LTF Homma confirmation — has real statistical edge, across multiple timeframes and markets.
+
+Only after we see those results will we decide whether it belongs inside the MaxTrader multi-regime architecture.
