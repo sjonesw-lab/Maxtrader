@@ -6,12 +6,12 @@ MaxTrader is an **intraday NASDAQ trading research engine** built on a wave-base
 
 **Current Status (as of Nov 17, 2025):**
 
-**Phase 1: Multi-Regime System (In Progress)**
+**Phase 1: Multi-Regime System (COMPLETE)**
 - ✅ **Normal Vol (VIX 13-30):** Wave-Renko strategy working - 43.5% WR, 9.39 PF, $2,249 PnL
 - ✅ **Ultra-Low Vol (VIX 8-13):** PA-confirmed VWAP mean-reversion complete
 - ✅ **EXTREME_CALM_PAUSE (VIX <8):** Trading pause implemented and tested
 - ⏭️ **High Vol (VIX >30):** Deferred to Phase 2 (see HIGH_VOL_DECISION.md, SMARTMONEY_HOMMA_RESEARCH.md)
-- ⏭️ **Runtime Safety Layer:** Next implementation priority
+- ✅ **Runtime Safety Layer:** COMPLETE (29 tests passing, production-ready)
 
 **Normal Vol Strategy (Validated):**
 - Win Rate: 43.5%, Profit Factor: 9.39
@@ -74,9 +74,42 @@ Preferred communication style: Simple, everyday language.
 
 **Trend Strength Calculation**: Computes rolling trend strength by analyzing the proportion of consecutive same-direction bricks over a lookback window, providing a smoothed measure of trend momentum.
 
+### Runtime Safety Layer
+
+**Production-Grade Safety System**: Protects capital through multi-layered risk management (COMPLETE - Nov 17, 2025).
+
+**SafetyManager** (`engine/safety_manager.py`):
+- **Pre-Trade Validation:** 12 comprehensive checks before every trade (kill switch, safe mode, circuit breakers, loss limits, position limits, trade frequency, size validation, exposure caps, R:R requirements)
+- **Circuit Breakers:** 3 auto-pause mechanisms (rapid loss: 3 losses/30min, error rate: 5 errors/10min, drawdown: 3% from peak)
+- **Health Checks:** 4 continuous monitors (market hours, data freshness <5min, system resources, API connectivity)
+- **Post-Trade Monitoring:** Real-time P&L tracking, drawdown detection, loss recording for circuit breaker logic
+- **State Management:** Daily/weekly/monthly P&L, peak balance tracking, position lifecycle management
+- **Event Logging:** Structured event system with severity levels and persistence
+- **Regime-Aware:** Different safety limits for each volatility regime
+
+**Safety Limits (Default $50k Account):**
+- Daily loss: 2% ($1,000) or $2,000 absolute cap
+- Position size: 1% max per trade ($500)
+- Concurrent positions: 3 (regime-dependent: NORMAL_VOL=3, ULTRA_LOW_VOL=2, HIGH_VOL=1)
+- Total exposure: 3% account max ($1,500)
+- Trade frequency: Minimum 60 seconds between trades, max 10/day globally
+
+**Live Trading Integration** (`live_trading_main.py`):
+- **LiveTradingEngine:** Coordinates SafetyManager with regime detection and signal processing
+- **Pre-Market Checks:** Validates system health before trading day (market hours, safety controls, data connectivity)
+- **Regime Routing:** Automatically applies regime-specific safety limits
+- **Error Handling:** Records errors for circuit breaker monitoring, enables safe mode on health failures
+- **Graceful Shutdown:** Closes all positions cleanly with final status logging
+
+**Testing:** 29 comprehensive unit tests (100% passing) covering all validation, circuit breakers, health checks, and state management.
+
+**Documentation:** Complete operational guide in `docs/SAFETY_LAYER_GUIDE.md` (startup procedures, monitoring, emergency controls, troubleshooting).
+
+**Status:** Production-ready pending staging dry-run with live broker/data integrations. External alerting (email/SMS) recommended before live deployment.
+
 ### Regime Detection & Routing
 
-**Multi-Regime Architecture (NEW)**: System now supports 4 distinct market regimes with dedicated strategies:
+**Multi-Regime Architecture**: System now supports 4 distinct market regimes with dedicated strategies:
 
 1. **NORMAL_VOL (VIX 13-30):** Wave-Renko strategy (validated, working)
 2. **ULTRA_LOW_VOL (VIX 8-13):** VWAP mean-reversion (complete, needs live tuning)
