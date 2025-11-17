@@ -42,9 +42,16 @@ The **Multi-Regime Architecture** supports four market regimes (`NORMAL_VOL`, `U
 
 The `Options Engine` generates a grid of strikes, estimates option premiums, and automatically selects optimal options structures (long options, debit spreads, butterflies) based on risk-reward ratios for maximum leverage efficiency.
 
-### Butterfly Exit Router
+### Butterfly Exit Module
 
-A sophisticated execution system (`execution/butterfly_exit_router.py`) decomposes butterfly spreads into two vertical spreads for sequential exit, significantly improving P&L compared to traditional whole-fly exits. It includes slippage controls, timing constraints, and fill quality enforcement.
+A sophisticated Henry Gambell-style butterfly exit system (`execution/fly_exit.py`) that NEVER uses full-fly combo orders. Instead, it decomposes ALL butterfly exits into split verticals to avoid market maker games, wide bid/ask spreads, and fill problems. Key features:
+
+- **Structure Detection**: Automatically identifies Unbalanced Butterflies (UBFly 1:-3:+2) and Balanced Butterflies (1:-2:+1) for both put and call sides
+- **Body Collapse First**: Closes ALL short body exposure using vertical spreads, with safety nets ensuring no orphan shorts remain even in multi-unit positions
+- **Wing Management**: Tracks consumed quantities to prevent double-closing wings, only exits remaining longs if valuable
+- **Exit Decision Rules**: 5-tier priority system - loss cut, profit capture (60% target), time-based give-up, pin profit (2x credit), and expiration-day assignment avoidance
+- **Multi-Unit Support**: Handles any number of fly units by maintaining correct pairing ratios across all shorts and wings
+- **Real-Time DTE**: Uses current days-to-expiration for all exit timing decisions
 
 ### Strategy Layer
 
