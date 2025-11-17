@@ -26,30 +26,29 @@ Before market opens (9:30 AM ET), verify:
 
 ## Launch at Market Open
 
-### Option 1: Manual Signal Monitoring (Recommended for Day 1)
+### Fully Automated Trading (100% Hands-Free)
 
-**Start monitoring at 9:30 AM ET:**
-
-```bash
-python engine/monitor_live_signals.py
-```
-
-This will:
-- Pull real-time 1-minute QQQ data from Alpaca
-- Detect ICT confluence signals (Sweep + Displacement + MSS)
-- Alert you when signals fire (no auto-execution yet)
-- Allow manual review before executing trades
-
-### Option 2: Fully Automated (Use after manual testing)
+**Start the auto trader at 9:30 AM ET:**
 
 ```bash
 python engine/auto_trader.py
 ```
 
 This will:
-- Automatically execute both strategies on valid signals
-- Send Pushover notifications on entries/exits
-- Update dashboard in real-time
+- Automatically monitor live QQQ 1-minute bars from Alpaca
+- Detect ICT confluence signals (Sweep + Displacement + MSS within 5 bars)
+- Execute BOTH strategies simultaneously on each signal:
+  - Conservative: 3% risk, 100% ATM long options
+  - Aggressive: 4% risk, 75% longs + 25% debit spreads
+- Manage exits automatically (target OR 60-minute time limit)
+- Send Pushover notifications on all entries and exits
+- Save state to `/tmp/trader_state.json` for dashboard integration
+
+**Dashboard will show:**
+- Real-time stats for both strategies (updated every 5 seconds)
+- Active positions count
+- Total trades, wins, P&L
+- Win rates for each strategy
 
 ---
 

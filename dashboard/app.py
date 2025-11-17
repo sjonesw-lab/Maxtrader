@@ -6,18 +6,28 @@ from datetime import datetime
 import threading
 import time
 import json
+import random
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard.notifier import notifier
-from engine.live_trading_engine import DualStrategyTrader
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET', 'dev-secret-key-change-in-production')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Initialize live trading engine
-trader = DualStrategyTrader()
+
+def load_trader_state():
+    """Load current trader state from file."""
+    try:
+        import json
+        state_file = '/tmp/trader_state.json'
+        if os.path.exists(state_file):
+            with open(state_file, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return None
 
 
 class DashboardState:
@@ -220,18 +230,44 @@ def broadcast_update(event_type: str, data: dict):
 
 def simulate_market_updates():
     """
-    Background thread to simulate real-time market updates.
-    This will be replaced with actual live trading data.
+    Background thread to update dashboard from live trader state.
     """
-    import random
-    
     cycle_count = 0
-    peak_balance = 50000.00
+    peak_balance = 100000.00
     last_loss_notification = 0
     last_circuit_check = time.time()
     
     while True:
         time.sleep(5)
+        
+        # Load live trader state
+        trader_state = load_trader_state()
+        if trader_state:
+            stats = trader_state.get('stats', {})
+            
+            # Update conservative stats
+            cons = stats.get('conservative', {})
+            state.conservative['trades'] = cons.get('trades', 0)
+            state.conservative['wins'] = cons.get('wins', 0)
+            state.conservative['total_pnl'] = cons.get('total_pnl', 0.0)
+            if state.conservative['trades'] > 0:
+                state.conservative['win_rate'] = (state.conservative['wins'] / state.conservative['trades']) * 100
+            
+            # Update aggressive stats
+            agg = stats.get('aggressive', {})
+            state.aggressive['trades'] = agg.get('trades', 0)
+            state.aggressive['wins'] = agg.get('wins', 0)
+            state.aggressive['total_pnl'] = agg.get('total_pnl', 0.0)
+            if state.aggressive['trades'] > 0:
+                state.aggressive['win_rate'] = (state.aggressive['wins'] / state.aggressive['trades']) * 100
+            
+            # Update total P&L
+            state.total_pnl = state.conservative['total_pnl'] + state.aggressive['total_pnl']
+            
+            # Count active positions
+            positions = trader_state.get('positions', {})
+            state.conservative['active_positions'] = len([p for p in positions.get('conservative', []) if p.get('status') == 'open'])
+            state.aggressive['active_positions'] = len([p for p in positions.get('aggressive', []) if p.get('status') == 'open'])
         
         if state.safety_status['kill_switch']:
             print(f"⚠️  Kill switch active - trading halted")
