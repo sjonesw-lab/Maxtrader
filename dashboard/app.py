@@ -107,6 +107,39 @@ def index():
 @app.route('/api/state')
 def get_state():
     """API endpoint to fetch current dashboard state."""
+    # Load REAL trader state from auto-trader
+    trader_state = load_trader_state()
+    
+    if trader_state:
+        # Use real data from auto-trader
+        state.account_balance = trader_state.get('account_balance', 25000)
+        
+        # Update strategy stats
+        stats = trader_state.get('stats', {})
+        state.conservative.update(stats.get('conservative', {}))
+        state.aggressive.update(stats.get('aggressive', {}))
+        
+        # Update positions
+        positions = trader_state.get('positions', {})
+        state.open_positions = positions.get('conservative', []) + positions.get('aggressive', [])
+        
+        # Check if auto-trader is actually running
+        last_updated = trader_state.get('last_updated')
+        if last_updated:
+            from datetime import datetime
+            last_time = datetime.fromisoformat(last_updated)
+            seconds_since = (datetime.now() - last_time).total_seconds()
+            
+            if seconds_since > 120:  # No update in 2 minutes
+                state.system_health['status'] = 'STALE'
+            else:
+                state.system_health['status'] = 'HEALTHY'
+        else:
+            state.system_health['status'] = 'NO_DATA'
+    else:
+        # No trader state file = auto-trader not running
+        state.system_health['status'] = 'NOT_RUNNING'
+    
     return jsonify({
         'account_balance': state.account_balance,
         'daily_pnl': state.daily_pnl,
