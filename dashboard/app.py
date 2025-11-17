@@ -140,6 +140,9 @@ def get_state():
         # No trader state file = auto-trader not running
         state.system_health['status'] = 'NOT_RUNNING'
     
+    # Determine if we're showing real or simulated data
+    data_mode = 'LIVE' if trader_state else 'NO_DATA'
+    
     return jsonify({
         'account_balance': state.account_balance,
         'daily_pnl': state.daily_pnl,
@@ -152,6 +155,7 @@ def get_state():
         'current_regime': state.current_regime,
         'vix_level': state.vix_level,
         'circuit_breakers': state.circuit_breakers,
+        'data_mode': data_mode,
         'safety_status': state.safety_status,
         'system_health': state.system_health,
         'performance_metrics': state.performance_metrics
@@ -359,59 +363,9 @@ def simulate_market_updates():
                     )
             last_circuit_check = time.time()
         
-        if cycle_count % 15 == 0:
-            if len(state.open_positions) < state.safety_status['max_positions'] and random.random() > 0.6:
-                new_position = {
-                    'id': f"POS-{len(state.open_positions) + 1}",
-                    'symbol': 'QQQ',
-                    'direction': random.choice(['CALL', 'PUT']),
-                    'structure': random.choice(['Long Option', 'Debit Spread', 'Butterfly']),
-                    'entry_price': random.uniform(100, 500),
-                    'current_pnl': 0,
-                    'entry_time': datetime.now().isoformat()
-                }
-                state.open_positions.append(new_position)
-                broadcast_update('positions_update', {
-                    'positions': state.open_positions
-                })
-            
-            elif len(state.open_positions) > 0 and random.random() > 0.5:
-                closed_position = state.open_positions.pop(0)
-                trade_pnl = random.uniform(-200, 500)
-                
-                state.performance_metrics['total_trades'] += 1
-                
-                if trade_pnl > 0:
-                    state.performance_metrics['winning_trades'] += 1
-                else:
-                    state.performance_metrics['losing_trades'] += 1
-                
-                if state.performance_metrics['total_trades'] > 0:
-                    state.performance_metrics['win_rate'] = (
-                        state.performance_metrics['winning_trades'] / 
-                        state.performance_metrics['total_trades']
-                    ) * 100
-                
-                trade = {
-                    'timestamp': datetime.now().isoformat(),
-                    'symbol': closed_position['symbol'],
-                    'direction': closed_position['direction'],
-                    'structure': closed_position['structure'],
-                    'pnl': trade_pnl,
-                    'regime': state.current_regime
-                }
-                state.trade_history.append(trade)
-                
-                broadcast_update('positions_update', {
-                    'positions': state.open_positions
-                })
-                
-                if abs(trade_pnl) > 300:
-                    notifier.send_trade_closed(
-                        closed_position['symbol'],
-                        trade_pnl,
-                        'Target reached' if trade_pnl > 0 else 'Stop loss hit'
-                    )
+        # SIMULATION DISABLED - Only show real trades from auto-trader
+        # Fake trade generation has been removed to prevent confusion
+        # Dashboard now only displays actual trades from /tmp/trader_state.json
         
         broadcast_update('pnl_update', {
             'daily_pnl': state.daily_pnl,

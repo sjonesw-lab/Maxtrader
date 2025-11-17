@@ -390,6 +390,14 @@ fetch('/api/state')
         updateSafetyStatus(data.safety_status);
         updateCircuitBreakers(data.circuit_breakers);
         updatePerformance(data.performance_metrics);
+        
+        // Show indicator if no live data
+        const indicator = document.getElementById('dataModeIndicator');
+        if (data.data_mode === 'NO_DATA') {
+            indicator.style.display = 'block';
+        } else {
+            indicator.style.display = 'none';
+        }
     })
     .catch(error => console.error('Error fetching initial state:', error));
 
