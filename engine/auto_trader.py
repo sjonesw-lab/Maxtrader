@@ -587,6 +587,9 @@ class AutomatedDualTrader:
                       f"Conservative: {status['conservative']['active_positions']} open | "
                       f"Aggressive: {status['aggressive']['active_positions']} open")
                 
+                # Save state regularly so dashboard knows we're alive
+                self.save_state()
+                
                 time.sleep(check_interval)
                 
             except KeyboardInterrupt:
