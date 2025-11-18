@@ -20,6 +20,7 @@ from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.ict_structures import detect_all_structures
 from engine.polygon_options_fetcher import PolygonOptionsFetcher
 from engine.polygon_data_fetcher import PolygonDataFetcher
+from engine.market_calendar import MarketCalendar
 from dashboard.notifier import notifier
 
 
@@ -38,6 +39,7 @@ class AutomatedDualTrader:
         # Data clients (using Polygon for BOTH bar data and options pricing)
         self.data_fetcher = PolygonDataFetcher()
         self.options_fetcher = PolygonOptionsFetcher()
+        self.market_calendar = MarketCalendar()
         
         # Configuration
         self.symbol = 'QQQ'
@@ -75,19 +77,8 @@ class AutomatedDualTrader:
         return self.account_balance
     
     def is_market_open(self) -> bool:
-        """Check if market is open (simple hour check)."""
-        now = datetime.now()
-        # Market hours: 9:30 AM - 4:00 PM ET (Mon-Fri)
-        if now.weekday() >= 5:  # Weekend
-            return False
-        hour = now.hour
-        minute = now.minute
-        # 9:30 AM - 4:00 PM
-        if hour < 9 or (hour == 9 and minute < 30):
-            return False
-        if hour >= 16:
-            return False
-        return True
+        """Check if market is open (uses MarketCalendar with holiday awareness)."""
+        return self.market_calendar.is_market_open_now()
     
     def get_recent_bars(self, hours=2) -> pd.DataFrame:
         """Fetch recent 1-minute bars from Polygon."""
@@ -483,13 +474,18 @@ class AutomatedDualTrader:
         }
     
     def run(self, check_interval=60):
-        """Main trading loop."""
+        """
+        Main trading loop with intelligent market hours scheduling.
+        Auto-starts at 9:25 AM ET, auto-stops at 4:05 PM ET (or 1:05 PM early close).
+        Aware of all market holidays and early close days.
+        """
         print("\n" + "="*70)
         print("🤖 AUTOMATED DUAL-STRATEGY TRADER")
         print("="*70)
         print(f"Conservative: 3% risk, 100% longs")
         print(f"Aggressive: 4% risk, 75% longs + 25% spreads")
         print(f"Target: 5x ATR per trade")
+        print(f"Auto-Start: 9:25 AM ET | Auto-Stop: 4:05 PM ET (1:05 PM early close)")
         print(f"Started: {datetime.now()}")
         print("="*70 + "\n")
         
@@ -504,12 +500,59 @@ class AutomatedDualTrader:
             priority=1
         )
         
+        trading_session_active = False
+        last_status_print = None
+        
         while True:
             try:
-                # Check market status
-                if not self.is_market_open():
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Market closed, waiting...")
-                    time.sleep(300)  # Check every 5 min
+                # Check market calendar
+                should_trade = self.market_calendar.should_start_trading()
+                should_stop = self.market_calendar.should_stop_trading()
+                market_status = self.market_calendar.get_status_message()
+                
+                # Print status update every 5 minutes when not trading
+                now = datetime.now()
+                if not trading_session_active:
+                    if last_status_print is None or (now - last_status_print).seconds >= 300:
+                        print(f"[{now.strftime('%H:%M:%S')}] {market_status}")
+                        last_status_print = now
+                
+                # Should we stop trading?
+                if should_stop and trading_session_active:
+                    print(f"\n⏰ Market closed - Stopping trading session at {now.strftime('%H:%M:%S')}")
+                    
+                    # Close any remaining positions
+                    if len(self.positions['conservative']) > 0 or len(self.positions['aggressive']) > 0:
+                        print("🔄 Closing all remaining positions at market close...")
+                        df = self.get_recent_bars()
+                        if len(df) > 0:
+                            current_price = df.iloc[-1]['close']
+                            self.check_exits(current_price)
+                    
+                    self.save_state()
+                    notifier.send_notification(
+                        f"Trading session ended\n"
+                        f"Final Balance: ${self.get_account_balance():,.2f}",
+                        title="⏰ Market Closed"
+                    )
+                    trading_session_active = False
+                    time.sleep(check_interval)
+                    continue
+                
+                # Should we start trading?
+                if should_trade and not trading_session_active:
+                    print(f"\n🚀 Market open - Starting trading session at {now.strftime('%H:%M:%S')}")
+                    print(f"   {market_status}")
+                    notifier.send_notification(
+                        f"Trading session started\n"
+                        f"Balance: ${self.get_account_balance():,.2f}",
+                        title="🚀 Market Open"
+                    )
+                    trading_session_active = True
+                
+                # Not trading hours? Wait
+                if not should_trade:
+                    time.sleep(check_interval)
                     continue
                 
                 # Get current data
