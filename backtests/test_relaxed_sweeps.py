@@ -116,98 +116,126 @@ def find_signals(df):
     return signals
 
 
-def backtest_75_25_strategy(df, signals, starting_capital=25000, conservative_risk=3.0, aggressive_risk=4.0):
-    """
-    Backtest with 75/25 allocation rule:
-    - Conservative: 100% longs (3% risk)
-    - Aggressive: 75% longs + 25% spreads (4% risk)
-    """
+def estimate_option_premium(underlying_price, strike, time_minutes_from_open=0):
+    """0DTE premium estimation (from champion strategy)."""
+    moneyness = (underlying_price - strike) / underlying_price
+    
+    if moneyness >= 0.01:
+        base_premium = 3.0 + (moneyness * 100)
+    elif moneyness >= 0.005:
+        base_premium = 2.5
+    elif moneyness >= -0.005:
+        base_premium = 2.0
+    elif moneyness >= -0.01:
+        base_premium = 1.2
+    elif moneyness >= -0.02:
+        base_premium = 0.6
+    else:
+        base_premium = 0.2
+    
+    time_remaining_pct = max(0, (390 - time_minutes_from_open) / 390)
+    time_decay = 0.3 + (0.7 * time_remaining_pct)
+    
+    vol_factor = underlying_price / 500
+    premium = base_premium * time_decay * vol_factor
+    
+    return max(premium, 0.05)
+
+
+def backtest_champion_logic(df, signals, starting_capital=25000, risk_pct=5.0):
+    """EXACT COPY of champion backtest logic."""
     trades = []
-    balance = starting_capital
+    last_exit_time = None
+    account_balance = starting_capital
+    
+    market_open = df.iloc[0]['timestamp'].replace(hour=9, minute=30, second=0, microsecond=0)
     
     for signal in signals:
-        entry_idx = signal['index'] + 1  # Next bar
+        if last_exit_time is not None and signal['timestamp'] <= last_exit_time:
+            continue
+        
+        entry_idx = signal['index'] + 1
         if entry_idx >= len(df):
             continue
         
         entry_price = df.iloc[entry_idx]['open']
-        atr = signal['atr']
-        target_distance = 5.0 * atr
+        entry_time = df.iloc[entry_idx]['timestamp']
+        
+        time_from_open = (entry_time - market_open).total_seconds() / 60
+        
+        atr_value = signal['atr']
+        target_distance = 5.0 * atr_value
+        
+        # CRITICAL: Skip tiny targets
+        if target_distance < 0.15:
+            continue
         
         if signal['direction'] == 'long':
             target_price = entry_price + target_distance
+            strike = round(entry_price / 5) * 5
         else:
             target_price = entry_price - target_distance
+            strike = round(entry_price / 5) * 5
         
-        # 60-bar hold window
+        premium_per_contract = estimate_option_premium(entry_price, strike, time_from_open)
+        
+        risk_dollars = account_balance * (risk_pct / 100)
+        num_contracts = int(risk_dollars / (premium_per_contract * 100))
+        num_contracts = max(1, min(num_contracts, 10))
+        
+        total_premium_paid = num_contracts * premium_per_contract * 100
+        
+        # 60-bar hold
         exit_window_end = min(entry_idx + 60, len(df) - 1)
         exit_window = df.iloc[entry_idx:exit_window_end+1]
         
         if len(exit_window) == 0:
             continue
         
-        # Check if target hit
         hit_target = False
+        exit_price = None
+        exit_time = None
+        
         for idx in range(len(exit_window)):
             bar = exit_window.iloc[idx]
             if signal['direction'] == 'long' and bar['high'] >= target_price:
                 hit_target = True
+                exit_price = target_price
+                exit_time = bar['timestamp']
                 break
             elif signal['direction'] == 'short' and bar['low'] <= target_price:
                 hit_target = True
+                exit_price = target_price
+                exit_time = bar['timestamp']
                 break
         
-        # Conservative (100% longs, 3% risk)
-        conservative_risk_dollars = balance * (conservative_risk / 100)
-        conservative_premium = 200  # Simplified ATM 0DTE
-        conservative_contracts = max(1, int(conservative_risk_dollars / conservative_premium))
-        conservative_cost = conservative_contracts * conservative_premium
+        if exit_price is None:
+            exit_price = exit_window.iloc[-1]['close']
+            exit_time = exit_window.iloc[-1]['timestamp']
+        
+        time_at_exit = (exit_time - market_open).total_seconds() / 60
         
         if hit_target:
-            conservative_pnl = (target_distance * 100 * conservative_contracts) - conservative_cost
+            intrinsic_value = target_distance * 100
+            option_value_at_exit = intrinsic_value * num_contracts
         else:
-            conservative_pnl = -conservative_cost
+            exit_premium = estimate_option_premium(exit_price, strike, time_at_exit)
+            option_value_at_exit = exit_premium * 100 * num_contracts
         
-        # Aggressive (75% longs, 25% spreads, 4% risk)
-        aggressive_risk_dollars = balance * (aggressive_risk / 100)
-        
-        # 75% to longs
-        long_allocation = aggressive_risk_dollars * 0.75
-        long_contracts = max(1, int(long_allocation / conservative_premium))
-        long_cost = long_contracts * conservative_premium
-        
-        # 25% to spreads (half the cost, lower payout)
-        spread_allocation = aggressive_risk_dollars * 0.25
-        spread_cost_per = conservative_premium * 0.5  # Spread costs less
-        spread_contracts = max(1, int(spread_allocation / spread_cost_per))
-        spread_cost = spread_contracts * spread_cost_per
-        
-        total_aggressive_cost = long_cost + spread_cost
-        
-        if hit_target:
-            # Longs pay full distance
-            long_payout = target_distance * 100 * long_contracts
-            # Spreads capped at $2 width (typical)
-            spread_payout = min(target_distance, 2.0) * 100 * spread_contracts
-            aggressive_pnl = (long_payout + spread_payout) - total_aggressive_cost
-        else:
-            aggressive_pnl = -total_aggressive_cost
-        
-        # Average the two strategies
-        combined_pnl = (conservative_pnl + aggressive_pnl) / 2
-        balance += combined_pnl
+        position_pnl = option_value_at_exit - total_premium_paid
+        account_balance += position_pnl
         
         trades.append({
             'timestamp': signal['timestamp'],
             'direction': signal['direction'],
             'hit_target': hit_target,
-            'conservative_pnl': conservative_pnl,
-            'aggressive_pnl': aggressive_pnl,
-            'combined_pnl': combined_pnl,
-            'balance': balance
+            'combined_pnl': position_pnl,
+            'balance': account_balance
         })
+        
+        last_exit_time = exit_time
     
-    return pd.DataFrame(trades), balance
+    return pd.DataFrame(trades), account_balance
 
 
 def analyze_results(trades_df, label, starting_capital=25000):
@@ -306,7 +334,7 @@ df_strict = detect_mss(df_strict)
 signals_strict = find_signals(df_strict)
 print(f"Signals found: {len(signals_strict)}")
 
-trades_strict, final_strict = backtest_75_25_strategy(df_strict, signals_strict)
+trades_strict, final_strict = backtest_champion_logic(df_strict, signals_strict)
 metrics_strict = analyze_results(trades_strict, "STRICT")
 
 print(f"Total Trades:    {metrics_strict['trades']}")
@@ -330,7 +358,7 @@ df_relaxed = detect_mss(df_relaxed)
 signals_relaxed = find_signals(df_relaxed)
 print(f"Signals found: {len(signals_relaxed)}")
 
-trades_relaxed, final_relaxed = backtest_75_25_strategy(df_relaxed, signals_relaxed)
+trades_relaxed, final_relaxed = backtest_champion_logic(df_relaxed, signals_relaxed)
 metrics_relaxed = analyze_results(trades_relaxed, "RELAXED")
 
 print(f"Total Trades:    {metrics_relaxed['trades']}")
