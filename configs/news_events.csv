@@ -1,0 +1,65 @@
+date,event_type,event_time_et,description
+2024-01-11,CPI,08:30,Consumer Price Index
+2024-01-31,FOMC,14:00,Federal Reserve Interest Rate Decision
+2024-02-01,NFP,08:30,Non-Farm Payrolls
+2024-02-13,CPI,08:30,Consumer Price Index
+2024-02-29,PCE,08:30,Personal Consumption Expenditures
+2024-03-01,NFP,08:30,Non-Farm Payrolls
+2024-03-12,CPI,08:30,Consumer Price Index
+2024-03-20,FOMC,14:00,Federal Reserve Interest Rate Decision
+2024-04-01,NFP,08:30,Non-Farm Payrolls
+2024-04-10,CPI,08:30,Consumer Price Index
+2024-05-01,FOMC,14:00,Federal Reserve Interest Rate Decision
+2024-05-03,NFP,08:30,Non-Farm Payrolls
+2024-05-15,CPI,08:30,Consumer Price Index
+2024-06-07,NFP,08:30,Non-Farm Payrolls
+2024-06-12,CPI,08:30,Consumer Price Index
+2024-06-12,FOMC,14:00,Federal Reserve Interest Rate Decision
+2024-07-05,NFP,08:30,Non-Farm Payrolls
+2024-07-11,CPI,08:30,Consumer Price Index
+2024-07-31,FOMC,14:00,Federal Reserve Interest Rate Decision
+2024-08-02,NFP,08:30,Non-Farm Payrolls
+2024-08-14,CPI,08:30,Consumer Price Index
+2024-09-06,NFP,08:30,Non-Farm Payrolls
+2024-09-11,CPI,08:30,Consumer Price Index
+2024-09-18,FOMC,14:00,Federal Reserve Interest Rate Decision
+2024-10-04,NFP,08:30,Non-Farm Payrolls
+2024-10-10,CPI,08:30,Consumer Price Index
+2024-11-01,NFP,08:30,Non-Farm Payrolls
+2024-11-07,FOMC,14:00,Federal Reserve Interest Rate Decision
+2024-11-13,CPI,08:30,Consumer Price Index
+2024-12-06,NFP,08:30,Non-Farm Payrolls
+2024-12-11,CPI,08:30,Consumer Price Index
+2024-12-18,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-01-10,CPI,08:30,Consumer Price Index
+2025-01-10,NFP,08:30,Non-Farm Payrolls
+2025-01-29,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-02-07,NFP,08:30,Non-Farm Payrolls
+2025-02-12,CPI,08:30,Consumer Price Index
+2025-03-07,NFP,08:30,Non-Farm Payrolls
+2025-03-12,CPI,08:30,Consumer Price Index
+2025-03-19,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-04-04,NFP,08:30,Non-Farm Payrolls
+2025-04-10,CPI,08:30,Consumer Price Index
+2025-05-02,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-05-02,NFP,08:30,Non-Farm Payrolls
+2025-05-13,CPI,08:30,Consumer Price Index
+2025-06-06,NFP,08:30,Non-Farm Payrolls
+2025-06-11,CPI,08:30,Consumer Price Index
+2025-06-18,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-07-03,NFP,08:30,Non-Farm Payrolls
+2025-07-10,CPI,08:30,Consumer Price Index
+2025-07-30,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-08-01,NFP,08:30,Non-Farm Payrolls
+2025-08-13,CPI,08:30,Consumer Price Index
+2025-09-05,NFP,08:30,Non-Farm Payrolls
+2025-09-10,CPI,08:30,Consumer Price Index
+2025-09-17,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-10-03,NFP,08:30,Non-Farm Payrolls
+2025-10-09,CPI,08:30,Consumer Price Index
+2025-11-07,NFP,08:30,Non-Farm Payrolls
+2025-11-07,FOMC,14:00,Federal Reserve Interest Rate Decision
+2025-11-12,CPI,08:30,Consumer Price Index
+2025-12-05,NFP,08:30,Non-Farm Payrolls
+2025-12-10,CPI,08:30,Consumer Price Index
+2025-12-17,FOMC,14:00,Federal Reserve Interest Rate Decision
