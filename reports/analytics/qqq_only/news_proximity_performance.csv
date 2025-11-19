@@ -1,0 +1,5 @@
+proximity,total_pnl,avg_pnl,total_trades,wins,win_rate
+Outside 2 hours,278718.9,2903.32,96,74,0.770833
+Within 1 hour,18170.01,4542.5,4,3,0.75
+Within 2 hours,190283.76,4530.57,42,37,0.880952
+Within 30 minutes,130520.34,3729.15,35,29,0.828571
