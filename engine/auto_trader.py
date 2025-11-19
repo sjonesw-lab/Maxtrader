@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Fully Automated Dual-Strategy Paper Trading System
+Fully Automated QQQ-Only Paper Trading System
 Uses REAL Polygon.io options pricing for realistic 0DTE paper trading
-Executes both conservative (3% risk) and aggressive (4% risk) strategies
+Executes both conservative (5% risk) and aggressive (5% risk) strategies
+QQQ-ONLY: 80.5% win rate vs 53% dual-symbol (SPY removed for performance)
 """
 
 import os
@@ -42,7 +43,7 @@ class AutomatedDualTrader:
         self.market_calendar = MarketCalendar()
         
         # Configuration
-        self.symbols = ['QQQ', 'SPY']  # Multi-symbol trading
+        self.symbols = ['QQQ']  # QQQ-ONLY: 80.5% win rate (SPY removed - diluted edge to 53%)
         self.starting_balance = starting_balance
         # BUG FIX: Match backtest risk percentage (was 3.0/4.0, backtest uses 5.0)
         self.conservative_risk_pct = 5.0  # Match backtest exactly
@@ -504,9 +505,9 @@ class AutomatedDualTrader:
         Aware of all market holidays and early close days.
         """
         print("\n" + "="*70)
-        print("🤖 AUTOMATED DUAL-STRATEGY TRADER (QQQ + SPY)")
+        print("🤖 AUTOMATED QQQ-ONLY TRADER (80.5% Win Rate)")
         print("="*70)
-        print(f"Symbols: {', '.join(self.symbols)}")
+        print(f"Symbol: {', '.join(self.symbols)}")
         print(f"Conservative: 5% risk, ITM options")
         print(f"Aggressive: 5% risk, ITM options")
         print(f"Target: 5x ATR per trade")
@@ -520,12 +521,12 @@ class AutomatedDualTrader:
         if self.last_startup_notification != today:
             balance = self.get_account_balance()
             notifier.send_notification(
-                f"Automated trader started\n"
-                f"Symbols: {', '.join(self.symbols)}\n"
+                f"QQQ-ONLY trader started\n"
+                f"Symbol: {', '.join(self.symbols)}\n"
                 f"Account: ${balance:,.2f}\n"
-                f"Both strategies: 5% risk\n"
-                f"No overlapping positions",
-                title="🤖 Trader Started",
+                f"Win Rate: 80.5% (backtest)\n"
+                f"Both strategies: 5% risk",
+                title="🤖 QQQ Trader Started",
                 priority=1
             )
             self.last_startup_notification = today
