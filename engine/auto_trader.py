@@ -42,7 +42,7 @@ class AutomatedDualTrader:
         self.market_calendar = MarketCalendar()
         
         # Configuration
-        self.symbol = 'QQQ'
+        self.symbols = ['QQQ', 'SPY']  # Multi-symbol trading
         self.starting_balance = starting_balance
         # BUG FIX: Match backtest risk percentage (was 3.0/4.0, backtest uses 5.0)
         self.conservative_risk_pct = 5.0  # Match backtest exactly
@@ -63,9 +63,9 @@ class AutomatedDualTrader:
         }
         self.trade_history = []  # Track all closed trades
         
-        # Market data buffer
-        self.bars_buffer = pd.DataFrame()
-        self.last_signal_check = None
+        # Market data buffer (per symbol)
+        self.bars_buffer = {symbol: pd.DataFrame() for symbol in self.symbols}
+        self.last_signal_check = {symbol: None for symbol in self.symbols}
         
         # Load previous state if exists
         self.load_state()
@@ -81,13 +81,13 @@ class AutomatedDualTrader:
         """Check if market is open (uses MarketCalendar with holiday awareness)."""
         return self.market_calendar.is_market_open_now()
     
-    def get_recent_bars(self, hours=2) -> pd.DataFrame:
-        """Fetch recent 1-minute bars from Polygon."""
+    def get_recent_bars(self, symbol: str, hours=2) -> pd.DataFrame:
+        """Fetch recent 1-minute bars from Polygon for a specific symbol."""
         end = datetime.now()
         start = end - timedelta(hours=hours)
         
         df = self.data_fetcher.fetch_stock_bars(
-            ticker=self.symbol,
+            ticker=symbol,
             from_date=start.strftime('%Y-%m-%d'),
             to_date=end.strftime('%Y-%m-%d')
         )
@@ -110,8 +110,8 @@ class AutomatedDualTrader:
         atr = df['tr'].rolling(window=period).mean().iloc[-1]
         return atr if not pd.isna(atr) else 0.5
     
-    def detect_signals(self, df: pd.DataFrame) -> List[Dict]:
-        """Detect ICT confluence signals."""
+    def detect_signals(self, symbol: str, df: pd.DataFrame) -> List[Dict]:
+        """Detect ICT confluence signals for a specific symbol."""
         # Prep data
         df = df.copy()
         df['h-l'] = df['high'] - df['low']
@@ -130,8 +130,8 @@ class AutomatedDualTrader:
         for i in range(max(0, len(df) - 10), len(df) - 5):
             timestamp = df.iloc[i]['timestamp']
             
-            # Skip if we already checked this period
-            if self.last_signal_check and timestamp <= self.last_signal_check:
+            # Skip if we already checked this period for this symbol
+            if self.last_signal_check[symbol] and timestamp <= self.last_signal_check[symbol]:
                 continue
             
             # Bullish signal
@@ -142,6 +142,7 @@ class AutomatedDualTrader:
                     price = df.iloc[i]['close']
                     
                     signals.append({
+                        'symbol': symbol,
                         'timestamp': timestamp,
                         'direction': 'LONG',
                         'price': price,
@@ -157,6 +158,7 @@ class AutomatedDualTrader:
                     price = df.iloc[i]['close']
                     
                     signals.append({
+                        'symbol': symbol,
                         'timestamp': timestamp,
                         'direction': 'SHORT',
                         'price': price,
@@ -165,17 +167,18 @@ class AutomatedDualTrader:
                     })
         
         if signals:
-            self.last_signal_check = max(s['timestamp'] for s in signals)
+            self.last_signal_check[symbol] = max(s['timestamp'] for s in signals)
         
         return signals
     
     def execute_conservative(self, signal: Dict, balance: float):
         """Execute conservative strategy using REAL Polygon 0DTE options pricing (5% risk to match backtest)."""
         risk_budget = balance * (self.conservative_risk_pct / 100)
+        symbol = signal['symbol']
         
         # Fetch REAL 0DTE option price from Polygon
         option_data = self.options_fetcher.get_0dte_option_price(
-            underlying_ticker=self.symbol,
+            underlying_ticker=symbol,
             current_price=signal['price'],
             direction=signal['direction'],
             strike_offset=-1  # 1 strike ITM (BACKTEST VALIDATED: +2000% vs +135% ATM)
@@ -207,6 +210,7 @@ class AutomatedDualTrader:
         # Track position with REAL option data
         position = {
             'strategy': 'conservative',
+            'symbol': symbol,
             'entry_time': datetime.now(),
             'entry_price': signal['price'],
             'direction': signal['direction'],
@@ -227,17 +231,17 @@ class AutomatedDualTrader:
         
         # Notification
         notifier.send_notification(
-            f"💼 CONSERVATIVE Entry (REAL 0DTE)\n"
+            f"💼 CONSERVATIVE Entry ({symbol})\n"
             f"{signal['direction']} {num_contracts} contracts\n"
             f"Strike: ${option_data['strike']:.2f}\n"
             f"Premium: ${option_data['ask']:.2f} (${total_cost:.2f} total)\n"
             f"Target: ${signal['target']:.2f}\n"
             f"Delta: {option_data['delta']:.2f}",
-            title="Conservative Entry",
+            title=f"Conservative {symbol}",
             priority=0
         )
         
-        print(f"✅ Conservative {signal['direction']}: {num_contracts}x {option_data['contract']}")
+        print(f"✅ Conservative {symbol} {signal['direction']}: {num_contracts}x {option_data['contract']}")
         print(f"   Premium: ${option_data['ask']:.2f} × {num_contracts} = ${total_cost:.2f}")
         
         self.save_state()
@@ -245,10 +249,11 @@ class AutomatedDualTrader:
     def execute_aggressive(self, signal: Dict, balance: float):
         """Execute aggressive strategy using REAL Polygon 0DTE options pricing (5% risk to match backtest)."""
         risk_budget = balance * (self.aggressive_risk_pct / 100)
+        symbol = signal['symbol']
         
         # Fetch REAL 0DTE option price from Polygon
         option_data = self.options_fetcher.get_0dte_option_price(
-            underlying_ticker=self.symbol,
+            underlying_ticker=symbol,
             current_price=signal['price'],
             direction=signal['direction'],
             strike_offset=-1  # 1 strike ITM (BACKTEST VALIDATED: +2000% vs +135% ATM)
@@ -280,6 +285,7 @@ class AutomatedDualTrader:
         # Track position with REAL option data
         position = {
             'strategy': 'aggressive',
+            'symbol': symbol,
             'entry_time': datetime.now(),
             'entry_price': signal['price'],
             'direction': signal['direction'],
@@ -300,28 +306,33 @@ class AutomatedDualTrader:
         
         # Notification
         notifier.send_notification(
-            f"🚀 AGGRESSIVE Entry (REAL 0DTE)\n"
+            f"🚀 AGGRESSIVE Entry ({symbol})\n"
             f"{signal['direction']} {num_contracts} contracts\n"
             f"Strike: ${option_data['strike']:.2f}\n"
             f"Premium: ${option_data['ask']:.2f} (${total_cost:.2f} total)\n"
             f"Target: ${signal['target']:.2f}\n"
             f"Delta: {option_data['delta']:.2f}",
-            title="Aggressive Entry",
+            title=f"Aggressive {symbol}",
             priority=0
         )
         
-        print(f"✅ Aggressive {signal['direction']}: {num_contracts}x {option_data['contract']}")
+        print(f"✅ Aggressive {symbol} {signal['direction']}: {num_contracts}x {option_data['contract']}")
         print(f"   Premium: ${option_data['ask']:.2f} × {num_contracts} = ${total_cost:.2f}")
         
         self.save_state()
     
-    def check_exits(self, current_price: float):
-        """Check and execute exits for both strategies."""
+    def check_exits(self, symbol_prices: Dict[str, float]):
+        """Check and execute exits for both strategies using symbol-specific prices."""
         now = datetime.now()
         
         # Conservative exits
         for pos in self.positions['conservative']:
             if pos['status'] != 'open':
+                continue
+            
+            # Get current price for this position's symbol
+            current_price = symbol_prices.get(pos['symbol'])
+            if current_price is None:
                 continue
             
             time_elapsed = (now - pos['entry_time']).total_seconds() / 60
@@ -340,6 +351,11 @@ class AutomatedDualTrader:
             if pos['status'] != 'open':
                 continue
             
+            # Get current price for this position's symbol
+            current_price = symbol_prices.get(pos['symbol'])
+            if current_price is None:
+                continue
+            
             time_elapsed = (now - pos['entry_time']).total_seconds() / 60
             hit_target = False
             
@@ -354,11 +370,12 @@ class AutomatedDualTrader:
     def close_position(self, position: Dict, exit_price: float, hit_target: bool):
         """Close a position using REAL Polygon exit pricing."""
         strategy = position['strategy']
+        symbol = position.get('symbol', 'QQQ')  # Get symbol from position
         
         # Fetch REAL exit price from Polygon (uses bid = realistic exit)
         exit_value_per_contract = self.options_fetcher.get_exit_price(
             contract_ticker=position['option_contract'],
-            underlying=self.symbol
+            underlying=symbol
         )
         
         if exit_value_per_contract is None:
@@ -395,7 +412,7 @@ class AutomatedDualTrader:
         self.trade_history.append({
             'timestamp': datetime.now().isoformat(),
             'strategy': strategy,
-            'symbol': self.symbol,
+            'symbol': position.get('symbol', 'UNKNOWN'),
             'direction': position['direction'],
             'option_contract': position['option_contract'],
             'num_contracts': position['num_contracts'],
@@ -481,8 +498,9 @@ class AutomatedDualTrader:
         Aware of all market holidays and early close days.
         """
         print("\n" + "="*70)
-        print("🤖 AUTOMATED DUAL-STRATEGY TRADER")
+        print("🤖 AUTOMATED DUAL-STRATEGY TRADER (QQQ + SPY)")
         print("="*70)
+        print(f"Symbols: {', '.join(self.symbols)}")
         print(f"Conservative: 5% risk, ITM options")
         print(f"Aggressive: 5% risk, ITM options")
         print(f"Target: 5x ATR per trade")
@@ -495,6 +513,7 @@ class AutomatedDualTrader:
         balance = self.get_account_balance()
         notifier.send_notification(
             f"Automated trader started\n"
+            f"Symbols: {', '.join(self.symbols)}\n"
             f"Account: ${balance:,.2f}\n"
             f"Both strategies: 5% risk\n"
             f"No overlapping positions",
@@ -526,10 +545,14 @@ class AutomatedDualTrader:
                     # Close any remaining positions
                     if len(self.positions['conservative']) > 0 or len(self.positions['aggressive']) > 0:
                         print("🔄 Closing all remaining positions at market close...")
-                        df = self.get_recent_bars()
-                        if len(df) > 0:
-                            current_price = df.iloc[-1]['close']
-                            self.check_exits(current_price)
+                        # Get prices for all symbols
+                        symbol_prices = {}
+                        for symbol in self.symbols:
+                            df = self.get_recent_bars(symbol)
+                            if len(df) > 0:
+                                symbol_prices[symbol] = df.iloc[-1]['close']
+                        if symbol_prices:
+                            self.check_exits(symbol_prices)
                     
                     self.save_state()
                     notifier.send_notification(
@@ -557,44 +580,57 @@ class AutomatedDualTrader:
                     time.sleep(check_interval)
                     continue
                 
-                # Get current data
-                df = self.get_recent_bars()
-                if len(df) == 0:
-                    print("No data available, retrying...")
+                # Get current data for ALL symbols
+                symbol_data = {}
+                symbol_prices = {}
+                for symbol in self.symbols:
+                    df = self.get_recent_bars(symbol)
+                    if len(df) > 0:
+                        symbol_data[symbol] = df
+                        symbol_prices[symbol] = df.iloc[-1]['close']
+                
+                if not symbol_data:
+                    print("No data available for any symbol, retrying...")
                     time.sleep(check_interval)
                     continue
                 
-                current_price = df.iloc[-1]['close']
                 balance = self.get_account_balance()
                 
-                # Check for exits first
-                self.check_exits(current_price)
+                # Check for exits first (using prices from all symbols)
+                if symbol_prices:
+                    self.check_exits(symbol_prices)
                 
-                # Check for new signals
-                signals = self.detect_signals(df)
+                # Check for new signals across ALL symbols
+                all_signals = []
+                for symbol, df in symbol_data.items():
+                    signals = self.detect_signals(symbol, df)
+                    all_signals.extend(signals)
                 
-                for signal in signals:
+                # Process signals (take first valid one, respect position limits)
+                for signal in all_signals:
                     # BUG FIX: Skip if we already have an open position (match backtest logic)
                     # Only allow 1 position at a time to prevent overlapping trades
                     has_open_conservative = any(p['status'] == 'open' for p in self.positions['conservative'])
                     has_open_aggressive = any(p['status'] == 'open' for p in self.positions['aggressive'])
                     
                     if has_open_conservative or has_open_aggressive:
-                        print(f"⏭️  Signal skipped - existing position(s) open (conservative: {has_open_conservative}, aggressive: {has_open_aggressive})")
+                        print(f"⏭️  {signal['symbol']} signal skipped - existing position(s) open (conservative: {has_open_conservative}, aggressive: {has_open_aggressive})")
                         continue
                     
-                    print(f"\n🎯 SIGNAL: {signal['direction']} @ ${signal['price']:.2f}, target ${signal['target']:.2f}")
+                    print(f"\n🎯 SIGNAL ({signal['symbol']}): {signal['direction']} @ ${signal['price']:.2f}, target ${signal['target']:.2f}")
                     
                     # Execute both strategies
                     self.execute_conservative(signal, balance)
                     self.execute_aggressive(signal, balance)
                     
                     self.save_state()
+                    break  # Only take first signal (respects position limit)
                 
-                # Status update
+                # Status update with all symbol prices
                 status = self.get_status()
+                price_str = " | ".join([f"{sym}: ${price:.2f}" for sym, price in symbol_prices.items()])
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] "
-                      f"Price: ${current_price:.2f} | "
+                      f"{price_str} | "
                       f"Conservative: {status['conservative']['active_positions']} open | "
                       f"Aggressive: {status['aggressive']['active_positions']} open")
                 

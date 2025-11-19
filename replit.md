@@ -20,7 +20,7 @@ The `CSVDataProvider` handles file-based data for backtesting, expecting 1-minut
 
 ### Polygon-Based Paper Trading System
 
-The **Automated Dual Trader** (`engine/auto_trader.py`) conducts realistic paper trading using Polygon.io's real options pricing data. It executes entries at the ask price and exits at the bid price, tracking positions and account balance internally without broker integration. It supports both Conservative (3% risk) and Aggressive (4% risk) strategies. **CRITICAL OPTIMIZATION**: Uses 1-strike ITM options (not ATM), which backtests showed delivers +2,000% returns vs +135% for ATM over 3 months, with 80% win rate and only 3% max drawdown.
+The **Automated Dual Trader** (`engine/auto_trader.py`) conducts realistic paper trading using Polygon.io's real options pricing data. It executes entries at the ask price and exits at the bid price, tracking positions and account balance internally without broker integration. **MULTI-SYMBOL SUPPORT**: Now trades both QQQ and SPY simultaneously (~5 signals/day total vs 2.5/day for QQQ alone). It supports both Conservative (5% risk) and Aggressive (5% risk) strategies, with strict position limits (1 total position at a time across all symbols). **CRITICAL OPTIMIZATION**: Uses 1-strike ITM options (not ATM), which backtests showed delivers +2,000% returns vs +135% for ATM over 3 months, with 80% win rate and only 3% max drawdown.
 
 ### ICT Structure Detection
 
