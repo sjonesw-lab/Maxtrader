@@ -12,7 +12,6 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from pathlib import Path
-from engine.polygon_data_fetcher import PolygonDataFetcher
 from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.ict_structures import detect_all_structures
 from engine.options_engine import estimate_option_premium
@@ -40,13 +39,39 @@ def wilson_confidence_interval(wins, total, confidence=0.95):
 def run_full_backtest(symbol: str, start_date: str, end_date: str):
     """
     Run backtest and return all individual trades with timestamps
+    Uses cached CSV data files instead of API
     """
     print(f"\n{'='*70}")
     print(f"Running backtest for {symbol}: {start_date} to {end_date}")
     print(f"{'='*70}")
     
-    fetcher = PolygonDataFetcher()
-    df = fetcher.fetch_stock_bars(ticker=symbol, from_date=start_date, to_date=end_date)
+    # Load from cached CSV file instead of Polygon API
+    csv_file = f'data/{symbol}_1m_2024_2025.csv'
+    
+    # Fallback to other QQQ files if main file doesn't exist
+    if not Path(csv_file).exists() and symbol == 'QQQ':
+        print(f"⚠️  {csv_file} not found, trying alternate QQQ files...")
+        for alt_file in ['data/QQQ_1m_real.csv', 'data/QQQ_1m_lowvol_2024.csv']:
+            if Path(alt_file).exists():
+                csv_file = alt_file
+                print(f"📂 Using {csv_file} instead")
+                break
+    
+    try:
+        print(f"📂 Loading cached data from {csv_file}...")
+        df = pd.read_csv(csv_file)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        # Filter date range BEFORE setting index
+        df = df[(df['timestamp'] >= start_date) & (df['timestamp'] <= end_date)]
+        
+        # Reset index to integer (required for ICT detection)
+        df = df.reset_index(drop=True)
+        
+        print(f"✅ Loaded {len(df):,} bars for {symbol}")
+    except Exception as e:
+        print(f"❌ Could not load {csv_file}: {e}")
+        return []
     
     if df is None or len(df) == 0:
         print(f"❌ No data for {symbol}")
