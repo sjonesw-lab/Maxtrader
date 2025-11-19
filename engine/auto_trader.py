@@ -44,8 +44,9 @@ class AutomatedDualTrader:
         # Configuration
         self.symbol = 'QQQ'
         self.starting_balance = starting_balance
-        self.conservative_risk_pct = 3.0
-        self.aggressive_risk_pct = 4.0
+        # BUG FIX: Match backtest risk percentage (was 3.0/4.0, backtest uses 5.0)
+        self.conservative_risk_pct = 5.0  # Match backtest exactly
+        self.aggressive_risk_pct = 5.0    # Match backtest exactly (dual strategy = 2 positions)
         self.atr_multiple = 5.0
         self.max_hold_minutes = 60
         
@@ -169,7 +170,7 @@ class AutomatedDualTrader:
         return signals
     
     def execute_conservative(self, signal: Dict, balance: float):
-        """Execute conservative strategy using REAL Polygon 0DTE options pricing (3% risk)."""
+        """Execute conservative strategy using REAL Polygon 0DTE options pricing (5% risk to match backtest)."""
         risk_budget = balance * (self.conservative_risk_pct / 100)
         
         # Fetch REAL 0DTE option price from Polygon
@@ -242,7 +243,7 @@ class AutomatedDualTrader:
         self.save_state()
     
     def execute_aggressive(self, signal: Dict, balance: float):
-        """Execute aggressive strategy using REAL Polygon 0DTE options pricing (4% risk)."""
+        """Execute aggressive strategy using REAL Polygon 0DTE options pricing (5% risk to match backtest)."""
         risk_budget = balance * (self.aggressive_risk_pct / 100)
         
         # Fetch REAL 0DTE option price from Polygon
@@ -482,9 +483,10 @@ class AutomatedDualTrader:
         print("\n" + "="*70)
         print("🤖 AUTOMATED DUAL-STRATEGY TRADER")
         print("="*70)
-        print(f"Conservative: 3% risk, 100% longs")
-        print(f"Aggressive: 4% risk, 75% longs + 25% spreads")
+        print(f"Conservative: 5% risk, ITM options")
+        print(f"Aggressive: 5% risk, ITM options")
         print(f"Target: 5x ATR per trade")
+        print(f"Position Limit: 1 at a time (no overlap)")
         print(f"Auto-Start: 9:25 AM ET | Auto-Stop: 4:05 PM ET (1:05 PM early close)")
         print(f"Started: {datetime.now()}")
         print("="*70 + "\n")
@@ -494,8 +496,8 @@ class AutomatedDualTrader:
         notifier.send_notification(
             f"Automated trader started\n"
             f"Account: ${balance:,.2f}\n"
-            f"Conservative: 3% risk\n"
-            f"Aggressive: 4% risk",
+            f"Both strategies: 5% risk\n"
+            f"No overlapping positions",
             title="🤖 Trader Started",
             priority=1
         )
@@ -572,6 +574,15 @@ class AutomatedDualTrader:
                 signals = self.detect_signals(df)
                 
                 for signal in signals:
+                    # BUG FIX: Skip if we already have an open position (match backtest logic)
+                    # Only allow 1 position at a time to prevent overlapping trades
+                    has_open_conservative = any(p['status'] == 'open' for p in self.positions['conservative'])
+                    has_open_aggressive = any(p['status'] == 'open' for p in self.positions['aggressive'])
+                    
+                    if has_open_conservative or has_open_aggressive:
+                        print(f"⏭️  Signal skipped - existing position(s) open (conservative: {has_open_conservative}, aggressive: {has_open_aggressive})")
+                        continue
+                    
                     print(f"\n🎯 SIGNAL: {signal['direction']} @ ${signal['price']:.2f}, target ${signal['target']:.2f}")
                     
                     # Execute both strategies
