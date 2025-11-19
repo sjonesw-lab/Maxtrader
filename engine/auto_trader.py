@@ -62,6 +62,8 @@ class AutomatedDualTrader:
             'aggressive': {'trades': 0, 'wins': 0, 'total_pnl': 0.0}
         }
         self.trade_history = []  # Track all closed trades
+        self.last_startup_notification = None  # Track when we last sent startup notification
+        self.last_market_open_notification = None  # Track when we last sent market open notification
         
         # Market data buffer (per symbol)
         self.bars_buffer = {symbol: pd.DataFrame() for symbol in self.symbols}
@@ -457,6 +459,8 @@ class AutomatedDualTrader:
             'positions': self.positions,
             'stats': self.stats,
             'trade_history': self.trade_history,
+            'last_startup_notification': self.last_startup_notification,
+            'last_market_open_notification': self.last_market_open_notification,
             'last_updated': datetime.now().isoformat()
         }
         with open(self.state_file, 'w') as f:
@@ -472,6 +476,8 @@ class AutomatedDualTrader:
                     self.positions = state.get('positions', {'conservative': [], 'aggressive': []})
                     self.stats = state.get('stats', self.stats)
                     self.trade_history = state.get('trade_history', [])
+                    self.last_startup_notification = state.get('last_startup_notification')
+                    self.last_market_open_notification = state.get('last_market_open_notification')
                     print(f"✅ State loaded - Balance: ${self.account_balance:.2f}, Trades: {len(self.trade_history)}")
         except Exception as e:
             print(f"⚠️ Could not load state: {e}")
@@ -509,17 +515,23 @@ class AutomatedDualTrader:
         print(f"Started: {datetime.now()}")
         print("="*70 + "\n")
         
-        # Startup notification
-        balance = self.get_account_balance()
-        notifier.send_notification(
-            f"Automated trader started\n"
-            f"Symbols: {', '.join(self.symbols)}\n"
-            f"Account: ${balance:,.2f}\n"
-            f"Both strategies: 5% risk\n"
-            f"No overlapping positions",
-            title="🤖 Trader Started",
-            priority=1
-        )
+        # Startup notification (only send once per day to avoid spam on restarts)
+        today = datetime.now().date().isoformat()
+        if self.last_startup_notification != today:
+            balance = self.get_account_balance()
+            notifier.send_notification(
+                f"Automated trader started\n"
+                f"Symbols: {', '.join(self.symbols)}\n"
+                f"Account: ${balance:,.2f}\n"
+                f"Both strategies: 5% risk\n"
+                f"No overlapping positions",
+                title="🤖 Trader Started",
+                priority=1
+            )
+            self.last_startup_notification = today
+            self.save_state()
+        else:
+            print(f"⚠️  Startup notification already sent today ({today}), skipping...")
         
         trading_session_active = False
         last_status_print = None
@@ -568,11 +580,20 @@ class AutomatedDualTrader:
                 if should_trade and not trading_session_active:
                     print(f"\n🚀 Market open - Starting trading session at {now.strftime('%H:%M:%S')}")
                     print(f"   {market_status}")
-                    notifier.send_notification(
-                        f"Trading session started\n"
-                        f"Balance: ${self.get_account_balance():,.2f}",
-                        title="🚀 Market Open"
-                    )
+                    
+                    # Only send notification if we haven't already sent it today
+                    today = now.date().isoformat()
+                    if self.last_market_open_notification != today:
+                        notifier.send_notification(
+                            f"Trading session started\n"
+                            f"Balance: ${self.get_account_balance():,.2f}",
+                            title="🚀 Market Open"
+                        )
+                        self.last_market_open_notification = today
+                        self.save_state()
+                    else:
+                        print(f"   ⚠️  Market open notification already sent today, skipping...")
+                    
                     trading_session_active = True
                 
                 # Not trading hours? Wait
