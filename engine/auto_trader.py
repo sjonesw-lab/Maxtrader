@@ -35,7 +35,7 @@ class AutomatedDualTrader:
     4. NO broker integration - pure paper trading
     """
     
-    def __init__(self, starting_balance=25000, state_file='/tmp/trader_state.json'):
+    def __init__(self, starting_balance=25000, state_file='trader_state.json'):
         # Data clients (using Polygon for BOTH bar data and options pricing)
         self.data_fetcher = PolygonDataFetcher()
         self.options_fetcher = PolygonOptionsFetcher()
