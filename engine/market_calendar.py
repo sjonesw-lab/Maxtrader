@@ -185,12 +185,20 @@ class MarketCalendar:
         if not self.is_trading_day(now):
             return False
         
+        # Get market hours for today
+        open_time, close_time = self.get_market_hours(now)
+        
+        # CRITICAL FIX: Don't try to start trading after market has closed
+        # If it's past close time, wait for tomorrow
+        stop_time = close_time.replace(minute=close_time.minute + 5)
+        if now >= stop_time:
+            return False
+        
         # Between 9:25 AM and 9:30 AM?
         if now.hour == 9 and 25 <= now.minute < 30:
             return True
         
-        # Already past 9:30? Start immediately
-        open_time, _ = self.get_market_hours(now)
+        # Already past 9:30 but before close? Start immediately
         if now >= open_time:
             return True
         
