@@ -18,10 +18,12 @@ from engine.polygon_data_fetcher import PolygonDataFetcher
 
 
 def main():
-    # Setup dates
+    # Setup dates - use Nov 18 (yesterday) since it's after midnight
     et_tz = pytz.timezone('America/New_York')
     now_et = datetime.now(et_tz)
-    today_str = now_et.strftime('%Y-%m-%d')
+    # Use Nov 18 for analysis
+    analysis_date = datetime(2025, 11, 18, tzinfo=et_tz)
+    today_str = '2025-11-18'
     
     print(f"🔍 ANALYZING TODAY'S ICT SIGNALS")
     print(f"📅 Date: {today_str}")
@@ -110,9 +112,9 @@ def main():
         
         print(f"✅ Found {len(signals)} ICT confluence signals\n")
         
-        # Define gap periods (when system was down)
-        gap_start = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
-        gap_end = now_et.replace(hour=11, minute=44, second=0, microsecond=0)
+        # Define gap periods (when system was down) - Nov 18
+        gap_start = analysis_date.replace(hour=9, minute=30, second=0, microsecond=0)
+        gap_end = analysis_date.replace(hour=11, minute=44, second=0, microsecond=0)
         
         print("=" * 80)
         print("📋 ALL ICT CONFLUENCE SIGNALS DETECTED TODAY")
@@ -144,42 +146,95 @@ def main():
             else:
                 target_price = price - target_move
             
+            # Check if target was hit in next 60 minutes
+            # Find the signal's index location
+            sig_idx = idx  # Use the loop idx directly
+            next_60_bars = df.iloc[sig_idx:sig_idx+61] if sig_idx < len(df) else df.iloc[sig_idx:]
+            
+            hit_target = False
+            max_profit = 0.0
+            if direction == 'long':
+                max_high = next_60_bars['high'].max()
+                max_profit = max_high - price
+                hit_target = max_high >= target_price
+            else:
+                min_low = next_60_bars['low'].min()
+                max_profit = price - min_low
+                hit_target = min_low <= target_price
+            
+            profit_pct = (max_profit / price) * 100
+            outcome = "✅ TARGET HIT" if hit_target else f"❌ MISSED (max: ${max_profit:.2f} / {profit_pct:.1f}%)"
+            
             print(f"\n{i}. {status}")
             print(f"   Time: {sig_time.strftime('%I:%M %p ET')}")
             print(f"   Direction: {direction.upper()}")
-            print(f"   Entry Price: ${price:.2f}")
-            print(f"   ATR: ${atr:.2f}")
-            print(f"   Target (5x ATR): ${target_price:.2f}")
+            print(f"   Entry: ${price:.2f} → Target: ${target_price:.2f} (${target_move:.2f})")
+            print(f"   OUTCOME: {outcome}")
         
-        # Summary
+        # Calculate actual performance
         print("\n" + "=" * 80)
-        print("📊 SUMMARY")
+        print("📊 ACTUAL PERFORMANCE")
         print("=" * 80)
-        print(f"Total Signals Today: {len(signals)}")
-        print(f"❌ Missed (9:30 AM - 11:44 AM gap): {len(missed_signals)}")
-        print(f"✅ Monitored Period (11:44 AM - now): {len(caught_signals)}")
         
-        if missed_signals:
-            print("\n⚠️  IMPACT OF MISSED SIGNALS:")
-            print(f"   • {len(missed_signals)} ICT confluence trade(s) not executed")
-            print(f"   • Gap period: 2 hours 14 minutes (77% of trading so far)")
-            print(f"   • Each would have been entered with:")
-            print(f"     - Conservative strategy (3% risk, 1-strike ITM option)")
-            print(f"     - Aggressive strategy (4% risk, 1-strike ITM option)")
-            print(f"   • Based on backtest stats: 78-79% win rate expected")
+        # Count winners from all signals
+        total_winners = 0
+        total_losers = 0
+        missed_winners = 0
+        missed_losers = 0
         
-        if caught_signals:
-            print("\n✅ SIGNALS DURING MONITORED PERIOD:")
-            print(f"   • {len(caught_signals)} signal(s) occurred after 11:44 AM")
-            print(f"   • System was running but may not have executed due to recent start")
-            print(f"   • Tomorrow: Full coverage from 9:25 AM - 4:05 PM ET guaranteed")
+        for sig in signals:
+            sig_time = sig['timestamp']
+            price = sig['price']
+            direction = sig['direction']
+            atr = sig['atr']
+            
+            # Find this signal in dataframe
+            sig_idx = None
+            for idx_val in range(len(df)):
+                if hasattr(df.index[idx_val], 'strftime'):
+                    if df.index[idx_val] == sig_time:
+                        sig_idx = idx_val
+                        break
+            
+            if sig_idx is None:
+                continue
+            
+            # Check outcome
+            next_60_bars = df.iloc[sig_idx:sig_idx+61]
+            target_move = atr * 5.0
+            
+            if direction == 'long':
+                target_price = price + target_move
+                hit_target = next_60_bars['high'].max() >= target_price
+            else:
+                target_price = price - target_move
+                hit_target = next_60_bars['low'].min() <= target_price
+            
+            # Track in gap or not
+            in_gap = gap_start <= sig_time <= gap_end
+            
+            if hit_target:
+                total_winners += 1
+                if in_gap:
+                    missed_winners += 1
+            else:
+                total_losers += 1
+                if in_gap:
+                    missed_losers += 1
         
-        if len(signals) == 0:
-            print("\n💡 ZERO-TRADE DAY:")
-            print(f"   • No ICT confluence setups detected")
-            print(f"   • This is normal - system averages ~2.5 trades/day")
-            print(f"   • Some days have 0, some have 5+")
-            print(f"   • Quality over quantity = institutional setups only")
+        win_rate = (total_winners / len(signals) * 100) if signals else 0
+        
+        print(f"Total Signals: {len(signals)}")
+        print(f"Winners: {total_winners} ({win_rate:.1f}%)")
+        print(f"Losers: {total_losers}")
+        print(f"\nMISSED DURING SYSTEM DOWNTIME:")
+        print(f"  Total Missed: {len(missed_signals)}")
+        print(f"  Would-Be Winners: {missed_winners}")
+        print(f"  Would-Be Losers: {missed_losers}")
+        print(f"\nMONITORED PERIOD:")
+        print(f"  Total Signals: {len(caught_signals)}")
+        print(f"  Winners: {total_winners - missed_winners}")
+        print(f"  Losers: {total_losers - missed_losers}")
         
     except Exception as e:
         print(f"❌ Error: {e}")
