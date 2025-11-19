@@ -37,8 +37,8 @@ circuit_breakers:
   # Rapid loss detection (pause if X losses in Y minutes)
   rapid_loss:
     enabled: true
-    max_losses: 3  # Max consecutive losses
-    time_window_minutes: 30
+    max_losses: 5  # Max consecutive losses (raised from 3 to accommodate 10% total risk)
+    time_window_minutes: 60  # Extended from 30 min (2 signals can lose = 10% loss is normal)
     pause_duration_minutes: 60  # Cool-down period
   
   # Error rate limiting (pause if too many errors)
@@ -51,7 +51,7 @@ circuit_breakers:
   # Drawdown protection (pause if drawdown exceeds threshold)
   drawdown:
     enabled: true
-    max_drawdown_pct: 0.03  # 3% drawdown triggers pause
+    max_drawdown_pct: 0.08  # 8% drawdown triggers pause (backtest max was 4%, this gives 2x buffer)
     pause_duration_minutes: 120  # 2 hour cool-down
 
 # =============================================================================

@@ -32,7 +32,7 @@ Uses an **ATR-Based Brick Building** method to construct Renko charts, adapting 
 
 ### Runtime Safety Layer
 
-A production-grade **SafetyManager** (`engine/safety_manager.py`) provides multi-layered risk management with 12 pre-trade validations, 3 auto-pause circuit breakers (rapid loss, error rate, drawdown), and 4 continuous health checks.
+A production-grade **SafetyManager** (`engine/safety_manager.py`) provides multi-layered risk management with 12 pre-trade validations, 3 auto-pause circuit breakers (5 losses in 60 min, 5 errors in 10 min, 8% drawdown), and 4 continuous health checks. Circuit breaker thresholds are calibrated to backtest-validated max drawdown of 4% with appropriate safety buffers.
 
 ### Regime Detection & Routing
 
