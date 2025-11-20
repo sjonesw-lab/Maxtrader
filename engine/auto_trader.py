@@ -97,8 +97,8 @@ class AutomatedDualTrader:
         """Check if market is open (uses MarketCalendar with holiday awareness)."""
         return self.market_calendar.is_market_open_now()
     
-    def get_recent_bars(self, symbol: str, hours=2) -> pd.DataFrame:
-        """Fetch recent 1-minute bars from Polygon for a specific symbol."""
+    def get_recent_bars(self, symbol: str, hours=0.5) -> pd.DataFrame:
+        """Fetch recent 1-minute bars from Polygon for a specific symbol (30 mins default)."""
         end = datetime.now()
         start = end - timedelta(hours=hours)
         
@@ -123,7 +123,8 @@ class AutomatedDualTrader:
         df['h-pc'] = abs(df['high'] - df['close'].shift(1))
         df['l-pc'] = abs(df['low'] - df['close'].shift(1))
         df['tr'] = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
-        atr = df['tr'].rolling(window=period).mean().iloc[-1]
+        atr_series = df['tr'].rolling(window=period).mean()
+        atr = atr_series.iloc[-1] if hasattr(atr_series, 'iloc') else 0.5
         return atr if not pd.isna(atr) else 0.5
     
     def detect_signals(self, symbol: str, df: pd.DataFrame) -> List[Dict]:
@@ -687,7 +688,7 @@ class AutomatedDualTrader:
                     # Send alert
                     notifier.send_notification(
                         f"⚠️ Position recovery ERROR\n"
-                        f"Symbol: {symbol}\n"
+                        f"Symbol: {position.get('symbol', 'UNKNOWN')}\n"
                         f"Strategy: {strategy}\n"
                         f"Error: {str(e)}\n"
                         f"Manual review required!",
@@ -712,11 +713,11 @@ class AutomatedDualTrader:
         print("✅ Heartbeat monitoring started (5-second intervals)")
     
     def start_watchdog(self):
-        """Start watchdog thread that terminates if main loop stalls >30 seconds."""
+        """Start watchdog thread that terminates if main loop stalls >60 seconds."""
         def watchdog_loop():
             while self.running:
                 time_since_loop = (datetime.now() - self.main_loop_timestamp).seconds
-                if time_since_loop > 30:
+                if time_since_loop > 60:
                     print(f"\n🚨 WATCHDOG: Main loop stalled for {time_since_loop}s - terminating!")
                     notifier.send_notification(
                         f"🚨 WATCHDOG ALERT\n"
@@ -731,7 +732,7 @@ class AutomatedDualTrader:
         
         self.watchdog_thread = threading.Thread(target=watchdog_loop, daemon=True)
         self.watchdog_thread.start()
-        print("✅ Watchdog started (30-second stall detection)")
+        print("✅ Watchdog started (60-second stall detection)")
     
     def get_status(self) -> Dict:
         """Get current status for dashboard."""
