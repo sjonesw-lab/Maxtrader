@@ -2,7 +2,7 @@
 
 ## Overview
 
-MaxTrader is an intraday NASDAQ trading research engine that uses a wave-based Renko framework and multi-timeframe confluence analysis to generate quality-driven trading signals. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system features a multi-regime architecture with robust runtime safety layers. A key discovery is the "CHAMPION STRATEGY" which combines ICT confluence with 5x ATR targets and 0DTE **1-strike ITM options** (not ATM), resulting in 2,000%+ 3-month returns with 80% win rate and only 3% max drawdown. The system includes a professional real-time trading dashboard with live updates, comprehensive safety monitoring, and integrated Pushover notifications. An auto-trader executes realistic paper trading using real options pricing data from Polygon.io for both Conservative and Aggressive strategies. **CRITICAL BUG FIXES (Nov 19, 2025):** Position overlap prevention added (only 1 trade at a time to match backtest), risk percentage corrected from 3%/4% to 5%/5% to match backtest validation, and duplicate Pushover notification spam fixed (now sends startup/market-open notifications only once per day). **QQQ-ONLY OPTIMIZATION (Nov 19, 2025):** After comprehensive 22-month backtest analysis (928 trades), QQQ-only delivers 80.5% win rate vs 53% for dual-symbol (QQQ+SPY). SPY diluted edge from 80.5% to 53% while adding 2,318 mediocre trades. System now configured for **QQQ-ONLY trading** with validated 80.5% win rate, +$3,261 avg P&L per trade.
+MaxTrader is an intraday NASDAQ trading research engine that uses a wave-based Renko framework and multi-timeframe confluence analysis to generate quality-driven trading signals. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system features a multi-regime architecture with robust runtime safety layers. A key discovery is the "CHAMPION STRATEGY" which combines ICT confluence with 5x ATR targets and 0DTE **1-strike ITM options** (not ATM), resulting in 2,000%+ 3-month returns with 80% win rate and only 3% max drawdown. The system includes a professional real-time trading dashboard with live updates, comprehensive safety monitoring, and integrated Pushover notifications. An auto-trader executes realistic paper trading using real options pricing data from Polygon.io for both Conservative and Aggressive strategies. **CRITICAL BUG FIXES (Nov 19, 2025):** Position overlap prevention added (only 1 trade at a time to match backtest), risk percentage corrected from 3%/4% to 5%/5% to match backtest validation, and duplicate Pushover notification spam fixed (now sends startup/market-open notifications only once per day). **QQQ-ONLY OPTIMIZATION (Nov 19, 2025):** After comprehensive 22-month backtest analysis (928 trades), QQQ-only delivers 80.5% win rate vs 53% for dual-symbol (QQQ+SPY). SPY diluted edge from 80.5% to 53% while adding 2,318 mediocre trades. System now configured for **QQQ-ONLY trading** with validated 80.5% win rate, +$3,261 avg P&L per trade. **PRODUCTION RELIABILITY SYSTEM (Nov 20, 2025):** Multi-layer reliability architecture with heartbeat monitoring (5-second intervals), watchdog auto-termination (30-second stall detection), external supervisor for auto-restart (<60-second recovery guarantee), atomic state writes with checksums, intelligent position recovery after crashes, and Pushover crash alerts. System now production-grade with zero-gap market coverage.
 
 ## User Preferences
 
@@ -20,7 +20,7 @@ The `CSVDataProvider` handles file-based data for backtesting, expecting 1-minut
 
 ### Polygon-Based Paper Trading System
 
-The **Automated QQQ-Only Trader** (`engine/auto_trader.py`) conducts realistic paper trading using Polygon.io's real options pricing data. It executes entries at the ask price and exits at the bid price, tracking positions and account balance internally without broker integration. **QQQ-ONLY CONFIGURATION**: Trades QQQ exclusively after analysis showed 80.5% win rate (+$3,261 avg P&L) vs 53% for dual-symbol trading (SPY diluted performance). Supports both Conservative (5% risk) and Aggressive (5% risk) strategies with strict position limits (1 total position at a time). **CRITICAL OPTIMIZATION**: Uses 1-strike ITM options (not ATM), which backtests showed delivers +2,000% returns vs +135% for ATM over 3 months, with 80% win rate and only 3% max drawdown.
+The **Automated QQQ-Only Trader** (`engine/auto_trader.py`) conducts realistic paper trading using Polygon.io's real options pricing data. It executes entries at the ask price and exits at the bid price, tracking positions and account balance internally without broker integration. **QQQ-ONLY CONFIGURATION**: Trades QQQ exclusively after analysis showed 80.5% win rate (+$3,261 avg P&L) vs 53% for dual-symbol trading (SPY diluted performance). Supports both Conservative (5% risk) and Aggressive (5% risk) strategies with strict position limits (1 total position at a time). **CRITICAL OPTIMIZATION**: Uses 1-strike ITM options (not ATM), which backtests showed delivers +2,000% returns vs +135% for ATM over 3 months, with 80% win rate and only 3% max drawdown. **RELIABILITY**: Production-grade reliability system with heartbeat thread (5s updates), watchdog monitor (30s stall detection), atomic state writes with checksums, backup recovery, and intelligent position recovery that evaluates exit conditions (target hit, time limit, expiration) after crashes to protect trades.
 
 ### ICT Structure Detection
 
@@ -33,6 +33,18 @@ Uses an **ATR-Based Brick Building** method to construct Renko charts, adapting 
 ### Runtime Safety Layer
 
 A production-grade **SafetyManager** (`engine/safety_manager.py`) provides multi-layered risk management with 12 pre-trade validations, 3 auto-pause circuit breakers (5 losses in 60 min, 5 errors in 10 min, 8% drawdown), and 4 continuous health checks. Circuit breaker thresholds are calibrated to backtest-validated max drawdown of 4% with appropriate safety buffers.
+
+### System Reliability & Crash Recovery
+
+A multi-layer **Reliability Architecture** ensures zero-gap market coverage and position protection:
+
+- **Heartbeat Monitoring**: 5-second heartbeat thread updates state file with timestamps
+- **Watchdog Protection**: 30-second stall detection auto-terminates frozen processes
+- **External Supervisor**: (`engine/supervisor.py`) monitors heartbeat every 15 seconds, auto-restarts on failure, guarantees <60-second recovery
+- **Atomic State Writes**: Temp-file writes with SHA256 checksums prevent corruption
+- **Backup Recovery**: Maintains last 3 state backups with automatic rollback on corruption
+- **Position Recovery**: On restart, evaluates open positions: exits if target hit/time exceeded/expired, resumes monitoring if valid, sends alerts if errors
+- **Crash Alerts**: Pushover notifications for watchdog triggers, restart events, recovery actions, and critical failures
 
 ### Regime Detection & Routing
 
