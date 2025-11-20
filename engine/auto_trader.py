@@ -97,8 +97,8 @@ class AutomatedDualTrader:
         """Check if market is open (uses MarketCalendar with holiday awareness)."""
         return self.market_calendar.is_market_open_now()
     
-    def get_recent_bars(self, symbol: str, hours=0.5) -> pd.DataFrame:
-        """Fetch recent 1-minute bars from Polygon for a specific symbol (30 mins default)."""
+    def get_recent_bars(self, symbol: str, hours=0.083) -> pd.DataFrame:
+        """Fetch recent 1-minute bars from Polygon for a specific symbol (5 mins = only last ~100 bars)."""
         end = datetime.now()
         start = end - timedelta(hours=hours)
         
@@ -129,8 +129,12 @@ class AutomatedDualTrader:
     
     def detect_signals(self, symbol: str, df: pd.DataFrame) -> List[Dict]:
         """Detect ICT confluence signals for a specific symbol."""
-        # Prep data
-        df = df.copy()
+        # Only analyze last 100 bars to prevent hanging
+        if len(df) > 100:
+            df = df.tail(100).copy()
+        else:
+            df = df.copy()
+            
         df['h-l'] = df['high'] - df['low']
         df['h-pc'] = abs(df['high'] - df['close'].shift(1))
         df['l-pc'] = abs(df['low'] - df['close'].shift(1))
