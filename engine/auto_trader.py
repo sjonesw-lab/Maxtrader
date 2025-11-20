@@ -12,6 +12,9 @@ sys.path.insert(0, '.')
 
 import time
 import json
+import hashlib
+import threading
+import shutil
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import pandas as pd
@@ -70,8 +73,18 @@ class AutomatedDualTrader:
         self.bars_buffer = {symbol: pd.DataFrame() for symbol in self.symbols}
         self.last_signal_check = {symbol: None for symbol in self.symbols}
         
+        # Reliability & monitoring
+        self.heartbeat_timestamp = datetime.now()
+        self.main_loop_timestamp = datetime.now()
+        self.heartbeat_thread = None
+        self.watchdog_thread = None
+        self.running = False
+        
         # Load previous state if exists
         self.load_state()
+        
+        # Check for position recovery on restart
+        self.recover_positions_after_restart()
         
         # Save initial state to create the file
         self.save_state()
@@ -453,7 +466,7 @@ class AutomatedDualTrader:
         self.save_state()
     
     def save_state(self):
-        """Save current state to file."""
+        """Save current state to file with atomic writes and checksums."""
         state = {
             'account_balance': self.account_balance,
             'starting_balance': self.starting_balance,
@@ -462,26 +475,263 @@ class AutomatedDualTrader:
             'trade_history': self.trade_history,
             'last_startup_notification': self.last_startup_notification,
             'last_market_open_notification': self.last_market_open_notification,
-            'last_updated': datetime.now().isoformat()
+            'last_updated': datetime.now().isoformat(),
+            'heartbeat': self.heartbeat_timestamp.isoformat(),
+            'main_loop_active': self.main_loop_timestamp.isoformat()
         }
-        with open(self.state_file, 'w') as f:
-            json.dump(state, f, default=str)
+        
+        # Atomic write: write to temp file, then rename
+        temp_file = f"{self.state_file}.tmp"
+        try:
+            state_json = json.dumps(state, default=str, indent=2)
+            
+            # Add checksum
+            checksum = hashlib.sha256(state_json.encode()).hexdigest()
+            state['checksum'] = checksum
+            
+            # Write to temp file
+            with open(temp_file, 'w') as f:
+                json.dump(state, f, default=str, indent=2)
+            
+            # Atomic rename
+            shutil.move(temp_file, self.state_file)
+            
+            # Keep backup of last 3 states
+            backup_file = f"{self.state_file}.backup"
+            if os.path.exists(self.state_file):
+                shutil.copy2(self.state_file, backup_file)
+                
+        except Exception as e:
+            print(f"⚠️ Error saving state: {e}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
     
     def load_state(self):
-        """Load previous state if exists."""
+        """Load previous state if exists, with validation and backup recovery."""
         try:
             if os.path.exists(self.state_file):
                 with open(self.state_file, 'r') as f:
                     state = json.load(f)
+                    
+                    # Validate checksum if present
+                    stored_checksum = state.pop('checksum', None)
+                    if stored_checksum:
+                        state_json = json.dumps({k: v for k, v in state.items() if k != 'checksum'}, default=str, indent=2)
+                        calculated_checksum = hashlib.sha256(state_json.encode()).hexdigest()
+                        
+                        if stored_checksum != calculated_checksum:
+                            print("⚠️ State file corrupted, attempting backup recovery...")
+                            backup_file = f"{self.state_file}.backup"
+                            if os.path.exists(backup_file):
+                                shutil.copy2(backup_file, self.state_file)
+                                with open(self.state_file, 'r') as f:
+                                    state = json.load(f)
+                                    print("✅ Recovered from backup")
+                            else:
+                                raise Exception("Checksum mismatch and no backup available")
+                    
                     self.account_balance = state.get('account_balance', self.starting_balance)
                     self.positions = state.get('positions', {'conservative': [], 'aggressive': []})
                     self.stats = state.get('stats', self.stats)
                     self.trade_history = state.get('trade_history', [])
                     self.last_startup_notification = state.get('last_startup_notification')
                     self.last_market_open_notification = state.get('last_market_open_notification')
+                    
+                    # Check for open positions
+                    open_positions = len([p for p in self.positions['conservative'] if p.get('status') == 'open']) + \
+                                   len([p for p in self.positions['aggressive'] if p.get('status') == 'open'])
+                    
                     print(f"✅ State loaded - Balance: ${self.account_balance:.2f}, Trades: {len(self.trade_history)}")
+                    if open_positions > 0:
+                        print(f"⚠️  Found {open_positions} open positions - will check for recovery")
+                        
         except Exception as e:
             print(f"⚠️ Could not load state: {e}")
+    
+    def recover_positions_after_restart(self):
+        """
+        Smart position recovery after crash/restart.
+        Evaluates each open position and decides whether to exit or continue.
+        """
+        for strategy in ['conservative', 'aggressive']:
+            positions_to_recover = [p for p in self.positions[strategy] if p.get('status') == 'open']
+            
+            if not positions_to_recover:
+                continue
+            
+            print(f"\n{'='*70}")
+            print(f"🔄 POSITION RECOVERY: {len(positions_to_recover)} {strategy} positions found")
+            print(f"{'='*70}")
+            
+            for position in positions_to_recover:
+                try:
+                    symbol = position.get('symbol', 'UNKNOWN')
+                    entry_time = datetime.fromisoformat(position['entry_time']) if isinstance(position['entry_time'], str) else position['entry_time']
+                    time_held = (datetime.now() - entry_time).seconds / 60
+                    
+                    print(f"\nEvaluating {symbol} {position['direction']} position:")
+                    print(f"  Entry: {entry_time.strftime('%I:%M %p')}")
+                    print(f"  Time held: {time_held:.0f} minutes")
+                    print(f"  Target: ${position['target_price']:.2f}")
+                    
+                    # Get current price
+                    df = self.get_recent_bars(symbol)
+                    if len(df) == 0:
+                        print(f"  ⚠️  Cannot fetch current price - will monitor on next loop")
+                        continue
+                    
+                    current_price = df.iloc[-1]['close']
+                    print(f"  Current: ${current_price:.2f}")
+                    
+                    # Check exit conditions
+                    should_exit = False
+                    exit_reason = ""
+                    
+                    # 1. Target hit while offline?
+                    if position['direction'] == 'LONG' and current_price >= position['target_price']:
+                        should_exit = True
+                        exit_reason = "Target HIT while offline"
+                    elif position['direction'] == 'SHORT' and current_price <= position['target_price']:
+                        should_exit = True
+                        exit_reason = "Target HIT while offline"
+                    
+                    # 2. Time limit exceeded?
+                    elif time_held >= self.max_hold_minutes * 60:
+                        should_exit = True
+                        exit_reason = f"Time limit exceeded ({time_held/60:.1f} hours)"
+                    
+                    # 3. Option likely expired? (4+ hours old on 0DTE)
+                    elif time_held >= 240:  # 4 hours
+                        should_exit = True
+                        exit_reason = "Position too old (likely expired)"
+                    
+                    if should_exit:
+                        print(f"  ✅ EXITING: {exit_reason}")
+                        
+                        # Fetch current option value
+                        option_data = self.options_fetcher.get_0dte_option_price(
+                            underlying_ticker=symbol,
+                            current_price=current_price,
+                            direction=position['direction'],
+                            strike_offset=-1
+                        )
+                        
+                        if option_data:
+                            exit_value_per_contract = option_data['bid'] * 100
+                        else:
+                            # Estimate intrinsic value if can't fetch quote
+                            strike = float(position['option_contract'].split('-')[-1])
+                            if position['direction'] == 'LONG':
+                                intrinsic = max(0, current_price - strike)
+                            else:
+                                intrinsic = max(0, strike - current_price)
+                            exit_value_per_contract = intrinsic * 100
+                        
+                        # Execute exit
+                        total_exit_value = exit_value_per_contract * position['num_contracts']
+                        pnl = total_exit_value - position['premium_paid']
+                        hit_target = 'Target HIT' in exit_reason
+                        
+                        # Update account
+                        self.account_balance += total_exit_value
+                        
+                        # Update stats
+                        self.stats[strategy]['trades'] += 1
+                        if pnl > 0:
+                            self.stats[strategy]['wins'] += 1
+                        self.stats[strategy]['total_pnl'] += pnl
+                        
+                        # Mark position closed
+                        position['status'] = 'closed'
+                        position['exit_price'] = current_price
+                        position['exit_time'] = datetime.now()
+                        position['pnl'] = pnl
+                        
+                        # Log trade
+                        self.trade_history.append({
+                            'timestamp': datetime.now().isoformat(),
+                            'strategy': strategy,
+                            'symbol': symbol,
+                            'direction': position['direction'],
+                            'option_contract': position['option_contract'],
+                            'num_contracts': position['num_contracts'],
+                            'entry_price': position['entry_price'],
+                            'exit_price': current_price,
+                            'premium_paid': position['premium_paid'],
+                            'total_exit_value': total_exit_value,
+                            'pnl': pnl,
+                            'hit_target': hit_target,
+                            'entry_time': position['entry_time'],
+                            'exit_time': datetime.now().isoformat(),
+                            'recovery_exit': True
+                        })
+                        
+                        # Send notification
+                        notifier.send_notification(
+                            f"🔄 RECOVERY: {strategy.upper()} position exited\n"
+                            f"Reason: {exit_reason}\n"
+                            f"P&L: ${pnl:+.2f}\n"
+                            f"Entry: ${position['entry_price']:.2f}\n"
+                            f"Exit: ${current_price:.2f}",
+                            title="Position Recovery",
+                            priority=1
+                        )
+                        
+                        print(f"  💰 P&L: ${pnl:+.2f}")
+                        
+                    else:
+                        print(f"  ✅ Position still valid - resuming normal monitoring")
+                
+                except Exception as e:
+                    print(f"  ⚠️  Error recovering position: {e}")
+                    # Send alert
+                    notifier.send_notification(
+                        f"⚠️ Position recovery ERROR\n"
+                        f"Symbol: {symbol}\n"
+                        f"Strategy: {strategy}\n"
+                        f"Error: {str(e)}\n"
+                        f"Manual review required!",
+                        title="Recovery Error",
+                        priority=2
+                    )
+            
+            print(f"{'='*70}\n")
+        
+        # Save state after recovery
+        self.save_state()
+    
+    def start_heartbeat(self):
+        """Start heartbeat thread that updates state every 5 seconds."""
+        def heartbeat_loop():
+            while self.running:
+                self.heartbeat_timestamp = datetime.now()
+                time.sleep(5)
+        
+        self.heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        self.heartbeat_thread.start()
+        print("✅ Heartbeat monitoring started (5-second intervals)")
+    
+    def start_watchdog(self):
+        """Start watchdog thread that terminates if main loop stalls >30 seconds."""
+        def watchdog_loop():
+            while self.running:
+                time_since_loop = (datetime.now() - self.main_loop_timestamp).seconds
+                if time_since_loop > 30:
+                    print(f"\n🚨 WATCHDOG: Main loop stalled for {time_since_loop}s - terminating!")
+                    notifier.send_notification(
+                        f"🚨 WATCHDOG ALERT\n"
+                        f"Main loop stalled for {time_since_loop} seconds\n"
+                        f"System terminating for restart\n"
+                        f"Supervisor should auto-restart",
+                        title="Watchdog Triggered",
+                        priority=2
+                    )
+                    os._exit(1)  # Force exit
+                time.sleep(10)
+        
+        self.watchdog_thread = threading.Thread(target=watchdog_loop, daemon=True)
+        self.watchdog_thread.start()
+        print("✅ Watchdog started (30-second stall detection)")
     
     def get_status(self) -> Dict:
         """Get current status for dashboard."""
@@ -489,12 +739,12 @@ class AutomatedDualTrader:
             'conservative': {
                 **self.stats['conservative'],
                 'win_rate': (self.stats['conservative']['wins'] / max(1, self.stats['conservative']['trades'])) * 100,
-                'active_positions': len([p for p in self.positions['conservative'] if p['status'] == 'open'])
+                'active_positions': len([p for p in self.positions['conservative'] if p.get('status') == 'open'])
             },
             'aggressive': {
                 **self.stats['aggressive'],
                 'win_rate': (self.stats['aggressive']['wins'] / max(1, self.stats['aggressive']['trades'])) * 100,
-                'active_positions': len([p for p in self.positions['aggressive'] if p['status'] == 'open'])
+                'active_positions': len([p for p in self.positions['aggressive'] if p.get('status') == 'open'])
             }
         }
     
@@ -515,6 +765,11 @@ class AutomatedDualTrader:
         print(f"Auto-Start: 9:25 AM ET | Auto-Stop: 4:05 PM ET (1:05 PM early close)")
         print(f"Started: {datetime.now()}")
         print("="*70 + "\n")
+        
+        # Start reliability monitoring
+        self.running = True
+        self.start_heartbeat()
+        self.start_watchdog()
         
         # Startup notification (only send once per day to avoid spam on restarts)
         today = datetime.now().date().isoformat()
@@ -601,6 +856,9 @@ class AutomatedDualTrader:
                 if not should_trade:
                     time.sleep(check_interval)
                     continue
+                
+                # Update main loop timestamp (for watchdog)
+                self.main_loop_timestamp = datetime.now()
                 
                 # Get current data for ALL symbols
                 symbol_data = {}
