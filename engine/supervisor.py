@@ -61,8 +61,24 @@ class TradingSupervisor:
         except Exception as e:
             return False, None, f"Error reading heartbeat: {str(e)}"
     
+    def find_trader_pid(self) -> int:
+        """Find the PID of the auto_trader.py process."""
+        try:
+            result = subprocess.run(
+                ['pgrep', '-f', 'engine/auto_trader.py'],
+                capture_output=True,
+                text=True
+            )
+            if result.stdout.strip():
+                pids = result.stdout.strip().split('\n')
+                return int(pids[0])  # Return first matching PID
+            return None
+        except Exception as e:
+            print(f"⚠️  Error finding trader PID: {e}")
+            return None
+    
     def restart_trader(self, reason: str):
-        """Restart the auto-trader workflow."""
+        """Kill the stalled trader process to trigger workflow auto-restart."""
         print(f"\n{'='*70}")
         print(f"🔄 RESTARTING TRADER")
         print(f"{'='*70}")
@@ -82,12 +98,21 @@ class TradingSupervisor:
             priority=1
         )
         
-        # Restart is handled by Replit - the workflow will auto-restart
-        # We just need to wait for it to come back up
-        print("⏳ Waiting for auto-trader to restart...")
+        # Find and kill the trader process
+        trader_pid = self.find_trader_pid()
+        if trader_pid:
+            print(f"🔪 Killing stalled trader (PID {trader_pid})...")
+            try:
+                subprocess.run(['kill', '-9', str(trader_pid)], check=True)
+                print(f"✅ Process terminated - workflow will auto-restart")
+            except Exception as e:
+                print(f"❌ Failed to kill process: {e}")
+        else:
+            print("⚠️  Trader process not found (may have already crashed)")
         
-        # Wait up to 30 seconds for restart
-        for i in range(30):
+        # Wait up to 60 seconds for restart
+        print("⏳ Waiting for auto-trader to restart...")
+        for i in range(60):
             time.sleep(1)
             is_alive, age, error = self.check_heartbeat()
             if is_alive:
@@ -97,7 +122,7 @@ class TradingSupervisor:
         
         # Restart failed
         self.consecutive_failures += 1
-        print(f"❌ Restart failed after 30 seconds")
+        print(f"❌ Restart failed after 60 seconds")
         
         if self.consecutive_failures >= 3:
             # Critical failure - alert user
