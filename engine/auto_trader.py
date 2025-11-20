@@ -864,10 +864,12 @@ class AutomatedDualTrader:
                 symbol_data = {}
                 symbol_prices = {}
                 for symbol in self.symbols:
+                    print(f"   Fetching {symbol} bars...")
                     df = self.get_recent_bars(symbol)
                     if len(df) > 0:
                         symbol_data[symbol] = df
                         symbol_prices[symbol] = df.iloc[-1]['close']
+                        print(f"   ✓ Got {len(df)} bars for {symbol}")
                 
                 if not symbol_data:
                     print("No data available for any symbol, retrying...")
