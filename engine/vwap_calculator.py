@@ -13,7 +13,7 @@ from datetime import time
 def calculate_session_vwap(df: pd.DataFrame, session_start: time = time(9, 30), 
                            session_end: time = time(16, 0)) -> pd.Series:
     """
-    Calculate cumulative VWAP for the current trading session.
+    Calculate cumulative VWAP for the current trading session (vectorized).
     
     VWAP = cumsum(Price * Volume) / cumsum(Volume)
     
@@ -26,40 +26,31 @@ def calculate_session_vwap(df: pd.DataFrame, session_start: time = time(9, 30),
         pd.Series: VWAP values for each bar
     """
     df = df.copy()
-    
-    df['date'] = pd.to_datetime(df['timestamp']).dt.date
-    df['time'] = pd.to_datetime(df['timestamp']).dt.time
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['date'] = df['timestamp'].dt.date
+    df['time'] = df['timestamp'].dt.time
     
     in_session = (df['time'] >= session_start) & (df['time'] <= session_end)
     
     df['typical_price'] = (df['high'] + df['low'] + df['close']) / 3
     df['pv'] = df['typical_price'] * df['volume']
     
-    vwap_list = [np.nan] * len(df)
+    df['vwap'] = np.nan
     
-    for date in df['date'].unique():
-        day_mask = (df['date'] == date) & in_session
-        day_indices = df[day_mask].index.tolist()
+    for date, group_df in df[in_session].groupby('date'):
+        group_indices = group_df.index
+        cum_pv = group_df['pv'].cumsum().values
+        cum_vol = group_df['volume'].cumsum().values
         
-        if len(day_indices) == 0:
-            continue
-        
-        day_df = df.loc[day_indices].copy()
-        
-        cum_pv = day_df['pv'].cumsum().values
-        cum_vol = day_df['volume'].cumsum().values
-        
-        day_vwap = cum_pv / np.where(cum_vol > 0, cum_vol, np.nan)
-        
-        for idx, vwap_val in zip(day_indices, day_vwap):
-            vwap_list[df.index.get_loc(idx)] = vwap_val
+        vwap_vals = np.divide(cum_pv, cum_vol, where=cum_vol > 0, out=np.full_like(cum_pv, np.nan))
+        df.loc[group_indices, 'vwap'] = vwap_vals
     
-    return pd.Series(vwap_list, index=df.index, name='vwap')
+    return df['vwap']
 
 
 def calculate_daily_atr(df: pd.DataFrame, period: int = 20) -> pd.Series:
     """
-    Calculate daily ATR from 1-minute bars, forward-filled to all bars.
+    Calculate daily ATR from 1-minute bars, forward-filled to all bars (vectorized).
     
     For days with < period of historical data, uses available ATR with smaller window.
     
@@ -75,19 +66,17 @@ def calculate_daily_atr(df: pd.DataFrame, period: int = 20) -> pd.Series:
     df['date'] = df['timestamp'].dt.date
     
     daily_data = []
-    for date in sorted(df['date'].unique()):
-        day_df = df[df['date'] == date]
-        if len(day_df) == 0:
-            continue
+    for date, group in df.groupby('date'):
         daily_data.append({
             'date': date,
-            'high': day_df['high'].max(),
-            'low': day_df['low'].min(),
-            'close': day_df['close'].iloc[-1]
+            'high': group['high'].max(),
+            'low': group['low'].min(),
+            'close': group['close'].iloc[-1]
         })
     
     daily = pd.DataFrame(daily_data)
     daily['date'] = pd.to_datetime(daily['date'])
+    daily = daily.sort_values('date').reset_index(drop=True)
     
     daily['h-l'] = daily['high'] - daily['low']
     daily['h-pc'] = abs(daily['high'] - daily['close'].shift(1))
@@ -96,14 +85,11 @@ def calculate_daily_atr(df: pd.DataFrame, period: int = 20) -> pd.Series:
     
     daily['atr'] = daily['tr'].rolling(window=period, min_periods=1).mean()
     
-    daily_dict = dict(zip(daily['date'].dt.date, daily['atr']))
+    daily_dict = dict(zip(daily['date'].dt.date, daily['atr'].values))
     
-    result_atr = []
-    for idx, row in df.iterrows():
-        date_key = row['date']
-        result_atr.append(daily_dict.get(date_key, np.nan))
+    df['daily_atr'] = df['date'].map(daily_dict)
     
-    return pd.Series(result_atr, index=df.index, name='daily_atr')
+    return df['daily_atr']
 
 
 def calculate_session_range(df: pd.DataFrame, current_idx: int) -> tuple:
