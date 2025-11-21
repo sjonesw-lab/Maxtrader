@@ -1,0 +1,245 @@
+Yes, we should build it exactly like that: as a clean, pluggable module in the existing system, behind a config flag. If it quant-checks out → flip it on. If it sucks → delete the module and remove the flag. Nothing else has to change.
+
+I’ll give you a Replit prompt that:
+	•	Treats your current codebase as the “core engine”.
+	•	Adds a VWAP mean-reversion strategy module that:
+	•	Uses underlying VWAP deviation for signals.
+	•	Outputs options trades only (debit spreads).
+	•	Wires it into your engine via a feature flag like ENABLE_VWAP_MEANREV.
+	•	Lets you backtest and disable without polluting the rest of the system.
+
+⸻
+
+Replit prompt – Add VWAP Mean-Reversion as a Pluggable Module
+
+You can paste this into Replit for Ghostwriter/AI:
+
+⸻
+
+PROMPT FOR REPLIT (EXTEND EXISTING SYSTEM)
+
+You are an expert Python quant/architect.
+You are working inside an existing options-only automated trading system that already:
+	•	Has a core engine (strategy loop / scheduler).
+	•	Has a way to define strategy modules (or at least can be refactored to one).
+	•	Has an options execution layer (building spreads/flies, sending orders or logging paper trades).
+	•	Has a backtest / paper-trade mode.
+
+Your task:
+
+👉 Add a new VWAP intraday mean-reversion strategy as a self-contained module, wired through a config flag so it can be:
+	•	Backtested in isolation or alongside existing strategies.
+	•	Turned ON or OFF without breaking anything.
+	•	Easily removed later if results are bad.
+
+Do NOT rewrite the whole project.
+Work with the existing architecture and patterns.
+
+⸻
+
+1. Discover the existing strategy interface
+	1.	Inspect the repo and identify:
+	•	Where strategies are defined (e.g. strategies/, modules/).
+	•	How strategies plug into the main engine.
+Look for things like:
+	•	BaseStrategy, Strategy, register_strategy, strategy_registry, etc.
+	•	Or a central dispatch that routes market state to multiple strategies.
+	2.	If there is already a base class / protocol for strategies, conform to it.
+For example, something like:
+
+class BaseStrategy(ABC):
+    @abstractmethod
+    def generate_signals(self, market_state, config) -> list[Signal]:
+        ...
+
+Or whatever equivalent exists.
+
+	3.	If there is no clear strategy interface, create one minimal, backwards-compatible abstraction, and adapt existing strategies with very thin wrappers. Keep this minimal and non-breaking.
+
+⸻
+
+2. Create the VWAP Mean-Reversion Strategy Module
+
+Add a new file, e.g.:
+	•	strategies/vwap_meanrev.py
+
+Implement a class like:
+
+class VWAPMeanReversionStrategy(BaseStrategy):
+    def __init__(self, config, logger):
+        self.config = config
+        self.logger = logger
+
+    def generate_signals(self, market_state) -> list[Signal]:
+        ...
+
+Where:
+	•	market_state includes at least:
+	•	symbol
+	•	intraday 1m/5m bars for the current session
+	•	daily ATR or recent volatility info
+	•	session timestamps (09:30–16:00 NY)
+	•	You can either:
+	•	Re-use existing VWAP helpers if they exist, or
+	•	Add a simple VWAP calculator.
+
+Signal engine is UNDERLYING ONLY. No options inside this class.
+
+⸻
+
+3. Signal Logic (UNDERLYING, as module-level behavior)
+
+Implement the signal logic as follows (parameterized via config):
+	1.	VWAP calculation
+	•	For the current session (09:30–16:00), compute VWAP on 1-minute or 5-minute bars:
+	•	Typical VWAP = cum(Price * Volume) / cum(Volume).
+	2.	Daily ATR / regime
+	•	Use existing daily data if available; otherwise compute a 20-day ATR for each symbol.
+	•	Use ATR for scaling and regime filter.
+	3.	Non-trend day filter
+	•	For each symbol/session, decide if it’s eligible for mean-reversion.
+	•	Use params (exposed in config):
+	•	max_session_range_atr_frac
+	•	max_open_to_high_atr_frac
+	•	max_open_to_low_atr_frac
+	•	trend_cutoff_time (e.g. “11:00”).
+	•	If:
+	•	Session range or open-extension exceeds these ATR thresholds early in the day → treat as trend day → strategy OFF for that symbol/day.
+	4.	Deviation + trigger (long side)
+	•	Only look for trades between min_entry_time and max_entry_time (e.g. 10:00–15:30).
+	•	Compute a distance band from VWAP based on ATR:
+
+band = band_atr_frac * daily_atr
+
+
+	•	Long setup:
+	•	Condition A: price trades below VWAP – band.
+	•	Condition B: then a subsequent bar closes back up toward VWAP, e.g.:
+	•	close_now > close_prev AND
+	•	close_now > vwap_now - band.
+	•	That bar is the trigger bar.
+	•	Define:
+	•	P       = trigger bar close.
+	•	P_stop  = min(
+recent swing low in this deviation leg,
+vwap_now - 2 * band
+)  (choose something simple + param).
+	•	P_target = VWAP at trigger time.
+	•	Create a Signal object (use the project’s existing Signal type if any):
+
+Signal(
+    strategy_name="VWAP_MEANREV",
+    symbol=symbol,
+    direction="LONG",
+    entry_time=trigger_timestamp,
+    P=P,
+    P_stop=P_stop,
+    P_target=P_target,
+    meta={...}
+)
+
+
+	5.	Short setup (mirror):
+	•	Condition A: price trades above VWAP + band.
+	•	Condition B: next bar closes back down toward VWAP.
+	•	P = trigger close; P_stop = local high or vwap + 2*band; P_target = VWAP.
+	•	Direction "SHORT".
+	6.	Per-day constraints:
+	•	At most max_trades_per_day per symbol (configurable).
+	•	Optionally enforce one direction per day (if needed).
+
+All thresholds must come from config, e.g.:
+
+strategies:
+  vwap_meanrev:
+    enabled: false
+    band_atr_frac: 0.5
+    max_session_range_atr_frac: 1.0
+    max_open_to_high_atr_frac: 0.7
+    max_open_to_low_atr_frac: 0.7
+    min_entry_time: "10:00"
+    max_entry_time: "15:30"
+    max_trades_per_day: 1
+
+
+⸻
+
+4. Map Signals → Options Trades Using Existing Options Layer
+
+You already have an options engine.
+Do NOT re-invent it.
+	1.	Find where underlying-level signals are translated into options positions:
+	•	It might be something like build_options_trades_from_signal(signal, risk_config).
+	2.	For VWAP_MEANREV signals, do debit spreads only:
+	•	For direction="LONG":
+	•	Use call debit spread, same-day or next-day expiry according to existing rules.
+	•	K_long ≈ closest strike to P.
+	•	K_short ≈ closest strike to P_target.
+	•	For direction="SHORT":
+	•	Use put debit spread:
+	•	K_long ≈ closest strike to P.
+	•	K_short ≈ closest strike to P_target.
+	3.	Use your existing risk config:
+	•	Per-trade risk cap as % of account or notional.
+	•	Sizing based on debit (max loss).
+	•	Daily loss limit still enforced by existing risk manager.
+	4.	Exit:
+	•	Re-use the framework’s existing exit logic (target hit, stop hit, time stop), but:
+	•	P_target → when underlying hits, close spread.
+	•	P_stop   → when underlying hits, treat as full invalidation and exit spread.
+	•	If neither hit by your configured cutoff time → close spread at market.
+
+⸻
+
+5. Wire the Strategy via a Feature Flag
+	1.	In the global config (YAML/JSON or whatever you use), add:
+
+strategies:
+  vwap_meanrev:
+    enabled: false
+    ...
+
+	2.	In the main engine / strategy loader, modify the registry so:
+	•	If strategies.vwap_meanrev.enabled is true, instantiate VWAPMeanReversionStrategy and register it.
+	•	If false, do nothing; the rest of the engine runs as-is.
+	3.	Make sure logging explicitly tags all logs from this module with strategy = VWAP_MEANREV.
+
+⸻
+
+6. Backtest / Paper-Trade Hooks
+	1.	Ensure the existing backtest runner can:
+	•	Run with other strategies OFF, only VWAP_MEANREV ON.
+	•	Run with VWAP_MEANREV + others (for portfolio impact).
+	2.	Make sure:
+	•	All VWAP_MEANREV trades are clearly labeled.
+	•	Results can be filtered by strategy_name == "VWAP_MEANREV".
+	3.	Add a small helper script if needed, e.g.:
+	•	scripts/run_backtest_vwap_meanrev.py with:
+	•	Enable only VWAP in config or override via CLI.
+	•	Run for a given date range on SPY/QQQ.
+	•	Dump results to CSV/Parquet.
+
+⸻
+
+7. Safety and Clean Removal
+	•	The VWAP module must be purely additive:
+	•	No changes to the core engine behavior when enabled=false.
+	•	No invasive modifications of unrelated strategies.
+	•	If results are bad:
+	•	We can remove vwap_meanrev.py.
+	•	Remove its config block.
+	•	Remove its registration line.
+	•	Nothing else should break.
+
+Keep the code:
+	•	Well-commented.
+	•	Contained in its own file.
+	•	Using the existing abstractions and types (Signal, Trade, etc.) wherever possible.
+
+⸻
+
+End of prompt. Build exactly this, integrated into the existing system.
+
+⸻
+
+If you want next, I can help you define a simple acceptance test for this module: e.g., “don’t even consider turning it on live unless it hits X win rate, Y PF, Z max DD over 5+ years.”
