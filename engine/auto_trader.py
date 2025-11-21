@@ -774,7 +774,8 @@ class AutomatedDualTrader:
         # Start reliability monitoring
         self.running = True
         self.start_heartbeat()
-        self.start_watchdog()
+        # Watchdog disabled - causes more problems than it solves (spam notifications, false kills)
+        # self.start_watchdog()
         
         # Startup notification (only send once per day to avoid spam on restarts)
         today = datetime.now().date().isoformat()

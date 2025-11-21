@@ -22,10 +22,6 @@ args = "dashboard"
 task = "workflow.run"
 args = "auto-trader"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "supervisor"
-
 [[workflows.workflow]]
 name = "dashboard"
 author = "agent"
@@ -45,17 +41,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python engine/auto_trader.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow]]
-name = "supervisor"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python engine/supervisor.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
