@@ -916,7 +916,9 @@ class AutomatedDualTrader:
                 # Status update with all symbol prices
                 status = self.get_status()
                 price_str = " | ".join([f"{sym}: ${price:.2f}" for sym, price in symbol_prices.items()])
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+                import pytz
+                et_now = datetime.now(pytz.timezone('America/New_York'))
+                print(f"[{et_now.strftime('%I:%M:%S %p ET')}] "
                       f"{price_str} | "
                       f"Conservative: {status['conservative']['active_positions']} open | "
                       f"Aggressive: {status['aggressive']['active_positions']} open")
