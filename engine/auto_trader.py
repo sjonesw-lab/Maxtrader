@@ -931,11 +931,14 @@ class AutomatedDualTrader:
                 self.save_state()
                 break
             except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
                 print(f"❌ Error: {e}")
+                print(f"❌ Full traceback:\n{error_details}")
                 notifier.send_notification(
                     f"Error in trading loop:\n{str(e)[:200]}",
                     title="⚠️ Trader Error",
-                    priority=2
+                    priority=1
                 )
                 time.sleep(check_interval)
 

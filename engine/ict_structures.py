@@ -152,7 +152,7 @@ def detect_fvgs(df: pd.DataFrame) -> pd.DataFrame:
             - fvg_low (float)
             - fvg_high (float)
     """
-    df = df.copy()
+    df = df.copy().reset_index(drop=True)
     
     df['fvg_bullish'] = False
     df['fvg_bearish'] = False
@@ -160,15 +160,15 @@ def detect_fvgs(df: pd.DataFrame) -> pd.DataFrame:
     df['fvg_high'] = np.nan
     
     for i in range(2, len(df)):
-        if df.loc[i, 'low'] > df.loc[i-2, 'high']:
+        if df.iloc[i]['low'] > df.iloc[i-2]['high']:
             df.at[i, 'fvg_bullish'] = True
-            df.at[i, 'fvg_low'] = df.loc[i-2, 'high']
-            df.at[i, 'fvg_high'] = df.loc[i, 'low']
+            df.at[i, 'fvg_low'] = df.iloc[i-2]['high']
+            df.at[i, 'fvg_high'] = df.iloc[i]['low']
         
-        if df.loc[i, 'high'] < df.loc[i-2, 'low']:
+        if df.iloc[i]['high'] < df.iloc[i-2]['low']:
             df.at[i, 'fvg_bearish'] = True
-            df.at[i, 'fvg_low'] = df.loc[i, 'high']
-            df.at[i, 'fvg_high'] = df.loc[i-2, 'low']
+            df.at[i, 'fvg_low'] = df.iloc[i]['high']
+            df.at[i, 'fvg_high'] = df.iloc[i-2]['low']
     
     return df
 
@@ -191,7 +191,7 @@ def detect_mss(df: pd.DataFrame) -> pd.DataFrame:
             - mss_bullish (bool)
             - mss_bearish (bool)
     """
-    df = df.copy()
+    df = df.copy().reset_index(drop=True)
     
     df['swing_high'] = False
     df['swing_low'] = False
@@ -200,17 +200,17 @@ def detect_mss(df: pd.DataFrame) -> pd.DataFrame:
     
     for i in range(2, len(df) - 2):
         is_swing_high = (
-            (df.loc[i, 'high'] > df.loc[i-1, 'high']) and
-            (df.loc[i, 'high'] > df.loc[i-2, 'high']) and
-            (df.loc[i, 'high'] > df.loc[i+1, 'high']) and
-            (df.loc[i, 'high'] > df.loc[i+2, 'high'])
+            (df.iloc[i]['high'] > df.iloc[i-1]['high']) and
+            (df.iloc[i]['high'] > df.iloc[i-2]['high']) and
+            (df.iloc[i]['high'] > df.iloc[i+1]['high']) and
+            (df.iloc[i]['high'] > df.iloc[i+2]['high'])
         )
         
         is_swing_low = (
-            (df.loc[i, 'low'] < df.loc[i-1, 'low']) and
-            (df.loc[i, 'low'] < df.loc[i-2, 'low']) and
-            (df.loc[i, 'low'] < df.loc[i+1, 'low']) and
-            (df.loc[i, 'low'] < df.loc[i+2, 'low'])
+            (df.iloc[i]['low'] < df.iloc[i-1]['low']) and
+            (df.iloc[i]['low'] < df.iloc[i-2]['low']) and
+            (df.iloc[i]['low'] < df.iloc[i+1]['low']) and
+            (df.iloc[i]['low'] < df.iloc[i+2]['low'])
         )
         
         if is_swing_high:
