@@ -61,21 +61,16 @@ class VWAPMeanReversionStrategy(BaseStrategy):
         Returns:
             List of Signal objects
         """
-        if len(df) < 50:
-            self.log("Insufficient data for VWAP strategy (need >50 bars)", "warning")
+        if len(df) < 100:
+            self.log("Insufficient data for VWAP strategy (need >100 bars)", "warning")
             return []
         
         df = df.copy()
         
         df['vwap'] = calculate_session_vwap(df)
+        df['daily_atr'] = calculate_daily_atr(df, period=20)
         
-        df['h-l'] = df['high'] - df['low']
-        df['h-pc'] = abs(df['high'] - df['close'].shift(1))
-        df['l-pc'] = abs(df['low'] - df['close'].shift(1))
-        df['tr'] = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
-        df['intraday_atr'] = df['tr'].rolling(window=14).mean()
-        
-        df['band'] = self.band_atr_frac * df['intraday_atr']
+        df['band'] = self.band_atr_frac * df['daily_atr']
         df['vwap_upper'] = df['vwap'] + df['band']
         df['vwap_lower'] = df['vwap'] - df['band']
         
@@ -88,7 +83,7 @@ class VWAPMeanReversionStrategy(BaseStrategy):
             row = df.loc[idx]
             prev_row = df.loc[prev_idx]
             
-            if pd.isna(row['vwap']) or pd.isna(row['intraday_atr']):
+            if pd.isna(row['vwap']) or pd.isna(row['daily_atr']):
                 continue
             
             timestamp = pd.to_datetime(row['timestamp'])
@@ -101,6 +96,12 @@ class VWAPMeanReversionStrategy(BaseStrategy):
             if current_date in trades_per_day:
                 if trades_per_day[current_date] >= self.max_trades_per_day:
                     continue
+            
+            if not is_non_trend_day(df, idx, row['daily_atr'], 
+                                   self.max_session_range_atr_frac,
+                                   self.max_open_ext_atr_frac,
+                                   self.trend_cutoff_time):
+                continue
             
             long_signal = self._check_long_setup(df, i, row, prev_row)
             if long_signal:
@@ -149,7 +150,7 @@ class VWAPMeanReversionStrategy(BaseStrategy):
                         'band': row['band'],
                         'deviation': row['close'] - row['vwap'],
                         'stop': stop_level,
-                        'intraday_atr': row['intraday_atr']
+                        'daily_atr': row['daily_atr']
                     }
                 )
         return None
@@ -187,7 +188,7 @@ class VWAPMeanReversionStrategy(BaseStrategy):
                         'band': row['band'],
                         'deviation': row['close'] - row['vwap'],
                         'stop': stop_level,
-                        'intraday_atr': row['intraday_atr']
+                        'daily_atr': row['daily_atr']
                     }
                 )
         return None

@@ -35,32 +35,33 @@ def calculate_session_vwap(df: pd.DataFrame, session_start: time = time(9, 30),
     df['typical_price'] = (df['high'] + df['low'] + df['close']) / 3
     df['pv'] = df['typical_price'] * df['volume']
     
-    vwap_values = []
+    vwap_list = [np.nan] * len(df)
     
     for date in df['date'].unique():
         day_mask = (df['date'] == date) & in_session
-        day_df = df[day_mask].copy()
+        day_indices = df[day_mask].index.tolist()
         
-        cum_pv = day_df['pv'].cumsum()
-        cum_vol = day_df['volume'].cumsum()
+        if len(day_indices) == 0:
+            continue
         
-        day_vwap = cum_pv / cum_vol.replace(0, np.nan)
+        day_df = df.loc[day_indices].copy()
         
-        for idx in df[day_mask].index:
-            pos = day_df.index.get_loc(idx)
-            vwap_values.append(day_vwap.iloc[pos] if pos < len(day_vwap) else np.nan)
+        cum_pv = day_df['pv'].cumsum().values
+        cum_vol = day_df['volume'].cumsum().values
+        
+        day_vwap = cum_pv / np.where(cum_vol > 0, cum_vol, np.nan)
+        
+        for idx, vwap_val in zip(day_indices, day_vwap):
+            vwap_list[df.index.get_loc(idx)] = vwap_val
     
-    for idx in df[~in_session].index:
-        vwap_values.insert(df.index.get_loc(idx), np.nan)
-    
-    return pd.Series(vwap_values, index=df.index, name='vwap')
+    return pd.Series(vwap_list, index=df.index, name='vwap')
 
 
 def calculate_daily_atr(df: pd.DataFrame, period: int = 20) -> pd.Series:
     """
-    Calculate daily ATR from 1-minute bars.
+    Calculate daily ATR from 1-minute bars, forward-filled to all bars.
     
-    This resamples intraday data to daily bars and computes ATR.
+    For days with < period of historical data, uses available ATR with smaller window.
     
     Args:
         df: DataFrame with timestamp, high, low, close columns
@@ -74,7 +75,7 @@ def calculate_daily_atr(df: pd.DataFrame, period: int = 20) -> pd.Series:
     df['date'] = df['timestamp'].dt.date
     
     daily_data = []
-    for date in df['date'].unique():
+    for date in sorted(df['date'].unique()):
         day_df = df[df['date'] == date]
         if len(day_df) == 0:
             continue
@@ -87,19 +88,22 @@ def calculate_daily_atr(df: pd.DataFrame, period: int = 20) -> pd.Series:
     
     daily = pd.DataFrame(daily_data)
     daily['date'] = pd.to_datetime(daily['date'])
-    daily = daily.sort_values('date').reset_index(drop=True)
     
     daily['h-l'] = daily['high'] - daily['low']
     daily['h-pc'] = abs(daily['high'] - daily['close'].shift(1))
     daily['l-pc'] = abs(daily['low'] - daily['close'].shift(1))
     daily['tr'] = daily[['h-l', 'h-pc', 'l-pc']].max(axis=1)
     
-    daily['atr'] = daily['tr'].rolling(window=period).mean()
+    daily['atr'] = daily['tr'].rolling(window=period, min_periods=1).mean()
     
-    df['date_key'] = pd.to_datetime(df['date'])
-    result = df[['date_key']].merge(daily[['date', 'atr']], left_on='date_key', right_on='date', how='left')
+    daily_dict = dict(zip(daily['date'].dt.date, daily['atr']))
     
-    return result['atr']
+    result_atr = []
+    for idx, row in df.iterrows():
+        date_key = row['date']
+        result_atr.append(daily_dict.get(date_key, np.nan))
+    
+    return pd.Series(result_atr, index=df.index, name='daily_atr')
 
 
 def calculate_session_range(df: pd.DataFrame, current_idx: int) -> tuple:
@@ -156,6 +160,9 @@ def is_non_trend_day(df: pd.DataFrame, current_idx: int, daily_atr: float,
     Returns:
         bool: True if non-trend day (mean-reversion valid)
     """
+    if pd.isna(daily_atr) or daily_atr <= 0:
+        return False
+    
     current_time = pd.to_datetime(df.loc[current_idx, 'timestamp']).time()
     
     if current_time < cutoff_time:
