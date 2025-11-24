@@ -10,6 +10,8 @@ from datetime import datetime
 def run_dashboard():
     """Run dashboard on port 5000 (required for Autoscale)"""
     print("🚀 Starting dashboard on port 5000...")
+    # Set environment to ensure port 5000
+    os.environ['PORT'] = '5000'
     subprocess.run(["python3", "dashboard/app.py"])
 
 def run_trader():
