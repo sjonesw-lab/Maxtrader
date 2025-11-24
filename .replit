@@ -58,5 +58,5 @@ localPort = 37275
 externalPort = 3001
 
 [deployment]
-deploymentTarget = "vm"
-run = ["python3", "engine/auto_trader.py"]
+deploymentTarget = "autoscale"
+run = ["python3", "run_production.py"]
