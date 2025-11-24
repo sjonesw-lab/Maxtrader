@@ -806,10 +806,12 @@ class AutomatedDualTrader:
                 market_status = self.market_calendar.get_status_message()
                 
                 # Print status update every 5 minutes when not trading
-                now = datetime.now()
+                import pytz
+                et = pytz.timezone('America/New_York')
+                now = datetime.now(et)
                 if not trading_session_active:
-                    if last_status_print is None or (now - last_status_print).seconds >= 300:
-                        print(f"[{now.strftime('%H:%M:%S')}] {market_status}")
+                    if last_status_print is None or (now - last_status_print).total_seconds() >= 300:
+                        print(f"[{now.strftime('%I:%M:%S %p ET')}] {market_status}")
                         last_status_print = now
                 
                 # Should we stop trading?
