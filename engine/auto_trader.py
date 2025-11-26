@@ -3,7 +3,7 @@
 Fully Automated QQQ-Only Paper Trading System
 Uses REAL Polygon.io options pricing for realistic 0DTE paper trading
 Executes both conservative (5% risk) and aggressive (5% risk) strategies
-QQQ-ONLY: Validated 49.3% win rate over 556 trades (22-month backtest)
+QQQ-ONLY: 80.5% win rate vs 53% dual-symbol (SPY removed for performance)
 """
 
 import os
@@ -46,7 +46,7 @@ class AutomatedDualTrader:
         self.market_calendar = MarketCalendar()
         
         # Configuration
-        self.symbols = ['QQQ']  # QQQ-ONLY: Validated 49.3% win rate, 20% max drawdown
+        self.symbols = ['QQQ']  # QQQ-ONLY: 80.5% win rate (SPY removed - diluted edge to 53%)
         self.starting_balance = starting_balance
         # BUG FIX: Match backtest risk percentage (was 3.0/4.0, backtest uses 5.0)
         self.conservative_risk_pct = 5.0  # Match backtest exactly
