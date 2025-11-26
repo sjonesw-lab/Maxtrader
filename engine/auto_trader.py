@@ -127,42 +127,8 @@ class AutomatedDualTrader:
         atr = atr_series.iloc[-1] if hasattr(atr_series, 'iloc') else 0.5
         return atr if not pd.isna(atr) else 0.5
     
-    def calculate_rsi(self, df: pd.DataFrame, period=14) -> pd.Series:
-        """Calculate RSI indicator."""
-        delta = df['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
-    
-    def is_vol_filter_pass(self, df: pd.DataFrame, idx: int) -> bool:
-        """Check if volatility is in optimal range (ATR between 0.3 and 2.0)."""
-        atr = df.iloc[idx].get('atr', 0.5)
-        return 0.3 <= atr <= 2.0
-    
-    def is_rsi_confirmation(self, df: pd.DataFrame, idx: int, direction: str) -> bool:
-        """RSI confirmation: LONG < 70, SHORT > 30."""
-        if 'rsi' not in df.columns:
-            return True
-        rsi = df.iloc[idx].get('rsi', 50)
-        if direction == 'LONG':
-            return rsi < 70
-        else:
-            return rsi > 30
-    
-    def is_volume_confirmation(self, df: pd.DataFrame, idx: int) -> bool:
-        """Volume > 20-bar average for confirmation."""
-        if 'volume' not in df.columns:
-            return True
-        if idx < 20:
-            return True
-        vol_avg = df.iloc[max(0, idx-20):idx]['volume'].mean()
-        current_vol = df.iloc[idx].get('volume', vol_avg)
-        return current_vol > vol_avg
-    
     def detect_signals(self, symbol: str, df: pd.DataFrame) -> List[Dict]:
-        """Detect ICT confluence signals with indicator confirmation layers."""
+        """Detect ICT confluence signals for a specific symbol."""
         # Only analyze last 100 bars to prevent hanging
         if len(df) > 100:
             df = df.tail(100).copy()
@@ -174,7 +140,6 @@ class AutomatedDualTrader:
         df['l-pc'] = abs(df['low'] - df['close'].shift(1))
         df['tr'] = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
         df['atr'] = df['tr'].rolling(window=14).mean()
-        df['rsi'] = self.calculate_rsi(df)
         
         df = label_sessions(df)
         df = add_session_highs_lows(df)
@@ -190,13 +155,10 @@ class AutomatedDualTrader:
             if self.last_signal_check[symbol] and timestamp <= self.last_signal_check[symbol]:
                 continue
             
-            # Bullish signal - ICT CONFLUENCE + INDICATORS
+            # Bullish signal
             if df.iloc[i]['sweep_bullish']:
                 window = df.iloc[i:i+6]
-                if (window['displacement_bullish'].any() and window['mss_bullish'].any() and
-                    self.is_vol_filter_pass(df, i) and 
-                    self.is_rsi_confirmation(df, i, 'LONG') and
-                    self.is_volume_confirmation(df, i)):
+                if window['displacement_bullish'].any() and window['mss_bullish'].any():
                     atr = df.iloc[i].get('atr', 0.5)
                     price = df.iloc[i]['close']
                     
@@ -209,13 +171,10 @@ class AutomatedDualTrader:
                         'target': price + (self.atr_multiple * atr)
                     })
             
-            # Bearish signal - ICT CONFLUENCE + INDICATORS
+            # Bearish signal
             if df.iloc[i]['sweep_bearish']:
                 window = df.iloc[i:i+6]
-                if (window['displacement_bearish'].any() and window['mss_bearish'].any() and
-                    self.is_vol_filter_pass(df, i) and 
-                    self.is_rsi_confirmation(df, i, 'SHORT') and
-                    self.is_volume_confirmation(df, i)):
+                if window['displacement_bearish'].any() and window['mss_bearish'].any():
                     atr = df.iloc[i].get('atr', 0.5)
                     price = df.iloc[i]['close']
                     
