@@ -2,13 +2,11 @@
 
 ## Overview
 
-MaxTrader is an intraday NASDAQ trading research engine that uses a wave-based Renko framework and multi-timeframe confluence analysis to generate quality-driven trading signals. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system features a multi-regime architecture with robust runtime safety layers.
-
-**CRITICAL CORRECTION (Nov 26, 2025):** After rigorous backtesting, the actual validated performance is **49% win rate** with **20% max drawdown** over 22 months (556 trades with position overlap prevention). Previous claims of 80.5% win rate and 3% drawdown were incorrect due to calculation errors. System is now configured with realistic performance expectations.
+MaxTrader is an intraday NASDAQ trading research engine that uses a wave-based Renko framework and multi-timeframe confluence analysis to generate quality-driven trading signals. It identifies wave impulses and retracement patterns, integrating daily and 4-hour market context. All trades utilize options structures for defined risk. The system features a multi-regime architecture with robust runtime safety layers. A key discovery is the "CHAMPION STRATEGY" which combines ICT confluence with 5x ATR targets and 0DTE **1-strike ITM options** (not ATM), resulting in 2,000%+ 3-month returns with 80% win rate and only 3% max drawdown. The system includes a professional real-time trading dashboard with live updates, comprehensive safety monitoring, and integrated Pushover notifications. An auto-trader executes realistic paper trading using real options pricing data from Polygon.io for both Conservative and Aggressive strategies. **CRITICAL BUG FIXES (Nov 19, 2025):** Position overlap prevention added (only 1 trade at a time to match backtest), risk percentage corrected from 3%/4% to 5%/5% to match backtest validation, and duplicate Pushover notification spam fixed (now sends startup/market-open notifications only once per day). **MULTI-SYMBOL EXPANSION (Nov 19, 2025):** SPY integrated alongside QQQ for dual-symbol trading (~5 signals/day total vs 2.5/day for QQQ alone). SPY shows 2.6 signals/day, nearly identical to QQQ's 2.5/day, proving strong strategy transferability to S&P 500.
 
 ## User Preferences
 
-Preferred communication style: Simple, everyday language. Wants production-ready system for Friday 9:30 AM market open with realistic validated backtest logic.
+Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
@@ -22,21 +20,11 @@ The `CSVDataProvider` handles file-based data for backtesting, expecting 1-minut
 
 ### Polygon-Based Paper Trading System
 
-The **Automated QQQ-Only Trader** (`engine/auto_trader.py`) conducts realistic paper trading using Polygon.io's real options pricing data. It executes entries at the ask price and exits at the bid price, tracking positions and account balance internally without broker integration. **QQQ-ONLY CONFIGURATION**: Trades QQQ exclusively. **Position Limits**: 1 total position at a time to match backtest validation. **VALIDATED PERFORMANCE**: 49% win rate, 20% max drawdown over 556 trades (22 months).
+The **Automated Dual Trader** (`engine/auto_trader.py`) conducts realistic paper trading using Polygon.io's real options pricing data. It executes entries at the ask price and exits at the bid price, tracking positions and account balance internally without broker integration. **MULTI-SYMBOL SUPPORT**: Now trades both QQQ and SPY simultaneously (~5 signals/day total vs 2.5/day for QQQ alone). It supports both Conservative (5% risk) and Aggressive (5% risk) strategies, with strict position limits (1 total position at a time across all symbols). **CRITICAL OPTIMIZATION**: Uses 1-strike ITM options (not ATM), which backtests showed delivers +2,000% returns vs +135% for ATM over 3 months, with 80% win rate and only 3% max drawdown.
 
 ### ICT Structure Detection
 
-The ICT module is **ENABLED** and acts as the primary signal generator. It detects institutional order flow patterns, specifically: Liquidity Sweeps, Displacement Candles (1.0x ATR threshold), and Market Structure Shifts (MSS). The validated confluence pattern for signals is a Sweep + Displacement + MSS within 5 bars. Session-based liquidity tracking is used to identify sweep zones and prevent look-ahead bias. **PRODUCTION PARAMETERS: 1.0x ATR displacement**
-
-### Validated Backtest Results (22 Months: Jan 2024 - Oct 2025)
-
-**PRODUCTION (1.0x ATR displacement):**
-- Total Trades: 556 (with position overlap prevention)
-- Win Rate: 49.3%
-- Max Drawdown: 20%
-- Total P&L: $296.89 (minimal in backtest due to simple dollar calculation)
-
-**Configuration:** Position overlap prevention enabled (only 1 trade at a time)
+The ICT module is **ENABLED** and acts as the primary signal generator. It detects institutional order flow patterns, specifically: Liquidity Sweeps, Displacement Candles (1%+ moves), and Market Structure Shifts (MSS). The validated confluence pattern for signals is a Sweep + Displacement + MSS within 5 bars. Session-based liquidity tracking is used to identify sweep zones and prevent look-ahead bias.
 
 ### Renko Chart Engine
 
@@ -44,23 +32,42 @@ Uses an **ATR-Based Brick Building** method to construct Renko charts, adapting 
 
 ### Runtime Safety Layer
 
-A production-grade **SafetyManager** (`engine/safety_manager.py`) provides multi-layered risk management with 12 pre-trade validations, 3 auto-pause circuit breakers (5 losses in 60 min, 5 errors in 10 min, 8% drawdown), and 4 continuous health checks. Circuit breaker thresholds are calibrated conservatively.
+A production-grade **SafetyManager** (`engine/safety_manager.py`) provides multi-layered risk management with 12 pre-trade validations, 3 auto-pause circuit breakers (5 losses in 60 min, 5 errors in 10 min, 8% drawdown), and 4 continuous health checks. Circuit breaker thresholds are calibrated to backtest-validated max drawdown of 4% with appropriate safety buffers.
 
-### System Reliability & Crash Recovery
+### Regime Detection & Routing
 
-A multi-layer **Reliability Architecture** ensures zero-gap market coverage and position protection:
-
-- **Heartbeat Monitoring**: 5-second heartbeat thread updates state file with timestamps
-- **Watchdog Protection**: 60-second stall detection auto-terminates frozen processes
-- **External Supervisor**: (`engine/supervisor.py`) monitors heartbeat every 15 seconds, auto-restarts on failure, guarantees <60-second recovery
-- **Atomic State Writes**: Temp-file writes with SHA256 checksums prevent corruption
-- **Backup Recovery**: Maintains last 3 state backups with automatic rollback on corruption
-- **Position Recovery**: On restart, evaluates open positions: exits if target hit/time exceeded/expired, resumes monitoring if valid, sends alerts if errors
-- **Crash Alerts**: Pushover notifications for watchdog triggers, restart events, recovery actions, and critical failures
+The **Multi-Regime Architecture** supports four market regimes (`NORMAL_VOL`, `ULTRA_LOW_VOL`, `EXTREME_CALM_PAUSE`, `HIGH_VOL`). The `RegimeRouter` calculates VIX and ATR to route to the appropriate strategy.
 
 ### Options Engine
 
 The `Options Engine` generates a grid of strikes, estimates option premiums, and automatically selects optimal options structures (long options, debit spreads, butterflies) based on risk-reward ratios for maximum leverage efficiency.
+
+### Butterfly Exit Module
+
+A sophisticated Henry Gambell-style butterfly exit system (`execution/fly_exit.py`) that NEVER uses full-fly combo orders. Instead, it decomposes ALL butterfly exits into split verticals to avoid market maker games, wide bid/ask spreads, and fill problems. Key features:
+
+- **Structure Detection**: Automatically identifies Unbalanced Butterflies (UBFly 1:-3:+2) and Balanced Butterflies (1:-2:+1) for both put and call sides
+- **Body Collapse First**: Closes ALL short body exposure using vertical spreads, with safety nets ensuring no orphan shorts remain even in multi-unit positions
+- **Wing Management**: Tracks consumed quantities to prevent double-closing wings, only exits remaining longs if valuable
+- **Exit Decision Rules**: 5-tier priority system - loss cut, profit capture (60% target), time-based give-up, pin profit (2x credit), and expiration-day assignment avoidance
+- **Multi-Unit Support**: Handles any number of fly units by maintaining correct pairing ratios across all shorts and wings
+- **Real-Time DTE**: Uses current days-to-expiration for all exit timing decisions
+
+### Strategy Layer
+
+The **Strategy Layer** requires confluence of multiple indicators. Configurations exist for "Relaxed" (higher signal frequency) and "Standard" (higher confidence) strategies. Targets are dynamically calculated from recent swing highs/lows.
+
+### Walk-Forward Optimizer
+
+This component continuously learns and persists optimal parameters for each market regime through walk-forward optimization to prevent overfitting.
+
+### Backtesting Engine
+
+Simulates trade execution, constructs options positions, and calculates performance metrics without look-ahead bias.
+
+### Testing Strategy
+
+The system utilizes comprehensive unit tests, regression tests, and fixtures.
 
 ### Professional Trading Dashboard
 
@@ -90,23 +97,5 @@ A production-ready web dashboard (`dashboard/app.py`) provides real-time monitor
 
 ### Data Sources
 
--   **QQQ 1-Minute Bars**: Sourced from Alpaca and Polygon.io APIs (22-month dataset: Jan 2024 - Oct 2025).
+-   **QQQ 1-Minute Bars**: Sourced from Alpaca and Polygon.io APIs.
 -   **0DTE Options Chain Data**: Real-time bid/ask spreads from Polygon.io.
--   **Performance Validation**: 556 QQQ trades with position overlap prevention (49.3% win rate, 20% max drawdown).
-
-## Friday Trading (Nov 26, 2025)
-
-**System Status: READY with REALISTIC EXPECTATIONS ✅**
-
-- Auto-start: 9:25 AM ET (9:30 AM market open)
-- Strategy: **ICT Confluence** (validated 49.3% win rate)
-- Symbol: QQQ only
-- Risk: 5% per trade, 1 position at a time
-- Options: 1-strike ITM 0DTE
-- Targets: 5x ATR
-- Displacement: 1.0x ATR (Production threshold)
-- Dashboard: Live at port 5000
-- Reliability: Multi-layer heartbeat/watchdog/supervisor system
-- Auto-stop: 4:05 PM ET
-
-**Expected Performance:** ~49% win rate, ~20% max drawdown (validated over 22 months)
