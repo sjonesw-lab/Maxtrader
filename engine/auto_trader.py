@@ -143,7 +143,7 @@ class AutomatedDualTrader:
         
         df = label_sessions(df)
         df = add_session_highs_lows(df)
-        df = detect_all_structures(df, displacement_threshold=1.0)
+        df = detect_all_structures(df, displacement_threshold=0.75)
         
         signals = []
         
