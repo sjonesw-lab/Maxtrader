@@ -122,8 +122,8 @@ def run_backtest(displacement: float, name: str):
                         exit_price = future.iloc[-1]['close'] if len(future) > 0 else signal['entry']
                         hit = False
                     
-                    # Calculate P&L
-                    risk_amt = balance * 0.05
+                    # Calculate P&L (FIXED RISK - NO COMPOUNDING)
+                    risk_amt = 1250  # Fixed 5% of $25K starting balance
                     pnl = calculate_options_pnl(signal['entry'], exit_price, signal['direction'], risk_amt, signal['atr'])
                     
                     balance += pnl
@@ -198,7 +198,7 @@ def main():
     print("\nPeriod: Jan 2024 - Oct 2025")
     print("Symbol: QQQ")
     print("Account: $25,000")
-    print("Risk: 5% per trade")
+    print("Risk: $1,250 per trade (FIXED - NO COMPOUNDING)")
     print("Options: 1-strike ITM 0DTE")
     print("Target: 5x ATR")
     print("Max Hold: 60 minutes")
