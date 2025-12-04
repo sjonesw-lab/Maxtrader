@@ -155,10 +155,10 @@ class AutomatedDualTrader:
             if self.last_signal_check[symbol] and timestamp <= self.last_signal_check[symbol]:
                 continue
             
-            # Bullish signal
+            # Bullish signal - SWEEP + DISPLACEMENT (MSS removed to generate signals)
             if df.iloc[i]['sweep_bullish']:
                 window = df.iloc[i:i+6]
-                if window['displacement_bullish'].any() and window['mss_bullish'].any():
+                if window['displacement_bullish'].any():
                     atr = df.iloc[i].get('atr', 0.5)
                     price = df.iloc[i]['close']
                     
@@ -171,10 +171,10 @@ class AutomatedDualTrader:
                         'target': price + (self.atr_multiple * atr)
                     })
             
-            # Bearish signal
+            # Bearish signal - SWEEP + DISPLACEMENT (MSS removed to generate signals)
             if df.iloc[i]['sweep_bearish']:
                 window = df.iloc[i:i+6]
-                if window['displacement_bearish'].any() and window['mss_bearish'].any():
+                if window['displacement_bearish'].any():
                     atr = df.iloc[i].get('atr', 0.5)
                     price = df.iloc[i]['close']
                     
