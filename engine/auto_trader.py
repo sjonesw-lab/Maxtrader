@@ -143,7 +143,7 @@ class AutomatedDualTrader:
         
         df = label_sessions(df)
         df = add_session_highs_lows(df)
-        df = detect_all_structures(df, displacement_threshold=0.5)
+        df = detect_all_structures(df, displacement_threshold=1.0)
         
         signals = []
         
@@ -155,10 +155,10 @@ class AutomatedDualTrader:
             if self.last_signal_check[symbol] and timestamp <= self.last_signal_check[symbol]:
                 continue
             
-            # Bullish signal - SWEEP + DISPLACEMENT (MSS removed to generate signals)
+            # Bullish signal - SWEEP + DISPLACEMENT + MSS (restored 3-way confluence)
             if df.iloc[i]['sweep_bullish']:
                 window = df.iloc[i:i+6]
-                if window['displacement_bullish'].any():
+                if window['displacement_bullish'].any() and window['mss_bullish'].any():
                     atr = df.iloc[i].get('atr', 0.5)
                     price = df.iloc[i]['close']
                     
@@ -171,10 +171,10 @@ class AutomatedDualTrader:
                         'target': price + (self.atr_multiple * atr)
                     })
             
-            # Bearish signal - SWEEP + DISPLACEMENT (MSS removed to generate signals)
+            # Bearish signal - SWEEP + DISPLACEMENT + MSS (restored 3-way confluence)
             if df.iloc[i]['sweep_bearish']:
                 window = df.iloc[i:i+6]
-                if window['displacement_bearish'].any():
+                if window['displacement_bearish'].any() and window['mss_bearish'].any():
                     atr = df.iloc[i].get('atr', 0.5)
                     price = df.iloc[i]['close']
                     
