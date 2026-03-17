@@ -23,15 +23,20 @@ def label_sessions(df: pd.DataFrame) -> pd.DataFrame:
     - Other: 16:00 – 18:00
     
     Args:
-        df: DataFrame with tz-aware timestamp column
+        df: DataFrame with tz-aware timestamp column (any timezone)
         
     Returns:
         pd.DataFrame: DataFrame with added 'session' column
     """
     df = df.copy()
     
-    df['hour'] = df['timestamp'].dt.hour
-    df['minute'] = df['timestamp'].dt.minute
+    # Convert to America/New_York timezone for session classification
+    import pytz
+    et = pytz.timezone('America/New_York')
+    df['timestamp_et'] = df['timestamp'].dt.tz_convert(et)
+    
+    df['hour'] = df['timestamp_et'].dt.hour
+    df['minute'] = df['timestamp_et'].dt.minute
     df['time_decimal'] = df['hour'] + df['minute'] / 60.0
     
     def classify_session(row):
@@ -48,7 +53,7 @@ def label_sessions(df: pd.DataFrame) -> pd.DataFrame:
     
     df['session'] = df.apply(classify_session, axis=1)
     
-    df = df.drop(['hour', 'minute', 'time_decimal'], axis=1)
+    df = df.drop(['hour', 'minute', 'time_decimal', 'timestamp_et'], axis=1)
     
     return df
 
@@ -78,9 +83,13 @@ def add_session_highs_lows(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     
-    df['trading_day'] = df['timestamp'].apply(
-        lambda ts: (ts + pd.Timedelta(hours=6)).date()
-    )
+    # Convert to ET for trading_day calculation (Asia session spans midnight)
+    import pytz
+    et = pytz.timezone('America/New_York')
+    ts_et = df['timestamp'].dt.tz_convert(et)
+    
+    # Add 6 hours to account for Asia session spanning midnight
+    df['trading_day'] = (ts_et + pd.Timedelta(hours=6)).dt.date
     
     df['asia_high'] = np.nan
     df['asia_low'] = np.nan
