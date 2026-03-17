@@ -29,7 +29,6 @@ class AlpacaDataFetcher:
             raise ValueError("ALPACA_API_KEY and ALPACA_API_SECRET not found in environment")
         
         # Initialize Alpaca data client for live account
-        # Note: paper=False uses live trading data endpoint
         try:
             self.client = StockHistoricalDataClient(self.api_key, self.api_secret)
             print(f"✓ Alpaca client initialized ({'Paper' if paper else 'Live'} account)")
@@ -54,6 +53,11 @@ class AlpacaDataFetcher:
             start = datetime.strptime(from_date, '%Y-%m-%d')
             end = datetime.strptime(to_date, '%Y-%m-%d')
             
+            # If requesting today's data (pre-market), extend to include yesterday + 2 days back
+            today = datetime.now().date()
+            if start.date() <= today <= end.date():
+                start = start - timedelta(days=5)  # Include last 5 days of data
+            
             # Request bars from Alpaca
             request = StockBarsRequest(
                 symbol_or_symbols=ticker,
@@ -63,19 +67,27 @@ class AlpacaDataFetcher:
                 limit=limit
             )
             
-            print(f"Fetching {ticker} bars from {from_date} to {to_date} (Alpaca)...")
+            print(f"Fetching {ticker} bars from {start.date()} to {end.date()} (Alpaca)...")
             bars = self.client.get_stock_bars(request)
             
-            if not bars:
+            if not bars or ticker not in bars or len(bars[ticker]) == 0:
                 raise Exception(f"No data returned for {ticker}")
             
-            # Convert to DataFrame using the built-in .df method
-            df = bars.df.reset_index()
+            # Convert to DataFrame
+            df_dict = {}
+            for bar in bars[ticker]:
+                df_dict.setdefault('timestamp', []).append(bar.timestamp)
+                df_dict.setdefault('open', []).append(bar.open)
+                df_dict.setdefault('high', []).append(bar.high)
+                df_dict.setdefault('low', []).append(bar.low)
+                df_dict.setdefault('close', []).append(bar.close)
+                df_dict.setdefault('volume', []).append(bar.volume)
             
-            # Rename/standardize columns
-            df.columns = df.columns.str.lower()
-            df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            df = pd.DataFrame(df_dict)
             df = df.sort_values('timestamp').reset_index(drop=True)
+            
+            # Filter to requested date range
+            df = df[(df['timestamp'].dt.date >= start.date()) & (df['timestamp'].dt.date <= end.date())]
             
             print(f"  ✓ Fetched {len(df):,} bars for {ticker}")
             return df

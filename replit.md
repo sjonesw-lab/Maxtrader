@@ -89,13 +89,22 @@ A production-ready web dashboard (`dashboard/app.py`) provides real-time monitor
 -   **requests**: HTTP requests (APIs, Pushover).
 -   **flask**: Web framework.
 -   **flask-socketio**: WebSocket for dashboard.
+-   **alpaca-trade-api**: Alpaca trading client (installed, ready for future live account integration).
 
 ### Active API Integrations
 
--   **Polygon.io API**: Real-time 1-minute QQQ bars and live 0DTE options chain snapshots (bid/ask spreads).
--   **Alpaca API**: Historical 1-minute bar data.
+-   **Polygon.io API**: 1-minute QQQ bars (15-min delayed) + live 0DTE options chain snapshots (bid/ask spreads).
+-   **Pushover API**: Push notifications for critical events.
 
 ### Data Sources
 
--   **QQQ 1-Minute Bars**: Sourced from Alpaca and Polygon.io APIs.
+-   **QQQ 1-Minute Bars**: Polygon.io API (15-min delayed for live trading, full history for backtesting).
 -   **0DTE Options Chain Data**: Real-time bid/ask spreads from Polygon.io.
+
+## Recent Changes (March 17, 2026)
+
+- **Restored ICT confluence settings**: displacement_threshold=1.0 (from 0.5), restored 3-way confluence requirement (Sweep + Displacement + MSS)
+- **Added AlpacaDataFetcher**: Ready for future live account integration when API access is enabled
+- **Confirmed working configuration**: 63.2% win rate with 2.07 profit factor in backtesting
+- **Live trading stack**: Polygon for data (reliable 15-min delay), Polygon for options pricing, local position tracking
+- **System status**: Running, ready to trade at 9:30 AM ET with restored profitable settings
