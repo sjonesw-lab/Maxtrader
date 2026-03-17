@@ -860,25 +860,28 @@ class AutomatedDualTrader:
                     
                     trading_session_active = True
                 
-                # Not trading hours? Wait
+                # Update main loop timestamp (for watchdog)
+                self.main_loop_timestamp = datetime.now()
+                
+                # ALWAYS fetch data (even during pre-market) for dashboard display
+                symbol_data = {}
+                symbol_prices = {}
+                for symbol in self.symbols:
+                    try:
+                        df = self.get_recent_bars(symbol)
+                        if len(df) > 0:
+                            symbol_data[symbol] = df
+                            symbol_prices[symbol] = df.iloc[-1]['close']
+                    except Exception as e:
+                        # Silently skip if data fetch fails (normal during pre-market)
+                        pass
+                
+                # Not trading hours? Keep fetching data for dashboard but don't execute trades
                 if not should_trade:
                     time.sleep(check_interval)
                     continue
                 
-                # Update main loop timestamp (for watchdog)
-                self.main_loop_timestamp = datetime.now()
-                
-                # Get current data for ALL symbols
-                symbol_data = {}
-                symbol_prices = {}
-                for symbol in self.symbols:
-                    print(f"   Fetching {symbol} bars...")
-                    df = self.get_recent_bars(symbol)
-                    if len(df) > 0:
-                        symbol_data[symbol] = df
-                        symbol_prices[symbol] = df.iloc[-1]['close']
-                        print(f"   ✓ Got {len(df)} bars for {symbol}")
-                
+                # Only execute trades during market hours if we have data
                 if not symbol_data:
                     print("No data available for any symbol, retrying...")
                     time.sleep(check_interval)
