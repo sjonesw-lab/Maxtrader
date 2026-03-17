@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
 Fully Automated QQQ-Only Paper Trading System
+Uses Alpaca live data for real-time 1-minute bars (live account)
 Uses REAL Polygon.io options pricing for realistic 0DTE paper trading
 Executes both conservative (5% risk) and aggressive (5% risk) strategies
 QQQ-ONLY: 80.5% win rate vs 53% dual-symbol (SPY removed for performance)
+Positions tracked locally - NOT placed on broker
 """
 
 import os
@@ -24,6 +26,7 @@ from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.ict_structures import detect_all_structures
 from engine.polygon_options_fetcher import PolygonOptionsFetcher
 from engine.polygon_data_fetcher import PolygonDataFetcher
+from engine.alpaca_data_fetcher import AlpacaDataFetcher
 from engine.market_calendar import MarketCalendar
 from dashboard.notifier import notifier
 
@@ -40,8 +43,9 @@ class AutomatedDualTrader:
     """
     
     def __init__(self, starting_balance=25000, state_file='trader_state.json'):
-        # Data clients (using Polygon for BOTH bar data and options pricing)
-        self.data_fetcher = PolygonDataFetcher()
+        # Data clients
+        self.alpaca_fetcher = AlpacaDataFetcher()  # Live trading (real-time Alpaca data)
+        self.polygon_fetcher = PolygonDataFetcher()  # Backtesting only
         self.options_fetcher = PolygonOptionsFetcher()
         self.market_calendar = MarketCalendar()
         
@@ -98,11 +102,12 @@ class AutomatedDualTrader:
         return self.market_calendar.is_market_open_now()
     
     def get_recent_bars(self, symbol: str, hours=0.083) -> pd.DataFrame:
-        """Fetch recent 1-minute bars from Polygon for a specific symbol (5 mins = only last ~100 bars)."""
+        """Fetch recent 1-minute bars from Alpaca (live trading) for a specific symbol."""
         end = datetime.now()
         start = end - timedelta(hours=hours)
         
-        df = self.data_fetcher.fetch_stock_bars(
+        # Use Alpaca for live trading (real-time data from your live account)
+        df = self.alpaca_fetcher.fetch_stock_bars(
             ticker=symbol,
             from_date=start.strftime('%Y-%m-%d'),
             to_date=end.strftime('%Y-%m-%d')
