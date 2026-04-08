@@ -808,6 +808,7 @@ class AutomatedDualTrader:
         self.running = True
         self.start_heartbeat()
         self.start_watchdog()
+        self.start_market_streams()
         
         # Startup notification (only send once per day to avoid spam on restarts)
         today = datetime.now().date().isoformat()

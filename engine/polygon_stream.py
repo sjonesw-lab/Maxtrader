@@ -33,7 +33,7 @@ class PolygonStreamHandler:
         
         self.client = WebSocketClient(
             api_key=api_key,
-            feed="delayed.polygon.io",
+            feed="stocks",
             market="stocks",
             verbose=True
         )
@@ -42,6 +42,7 @@ class PolygonStreamHandler:
         
     def start(self):
         """Start streaming minute aggregates for the symbol."""
+        print(f"Starting Polygon stream for {self.symbol}")
         self.client.subscribe(f"AM.{self.symbol}")
         print(f"Subscribed to {self.symbol} 1-minute bars")
         self.client.run(self._handle_message)
@@ -56,6 +57,7 @@ class PolygonStreamHandler:
         for msg in msgs:
             if isinstance(msg, EquityAgg):
                 bar = self._convert_to_bar(msg)
+                print(f"Stream bar received: {bar['timestamp']} {bar['close']:.2f}")
                 
                 if self.callback:
                     self.callback(bar)
