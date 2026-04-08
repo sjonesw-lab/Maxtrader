@@ -27,6 +27,7 @@ from engine.ict_structures import detect_all_structures
 from engine.polygon_options_fetcher import PolygonOptionsFetcher
 from engine.polygon_data_fetcher import PolygonDataFetcher
 from engine.alpaca_data_fetcher import AlpacaDataFetcher
+from engine.polygon_data_fetcher import PolygonDataFetcher
 from engine.market_calendar import MarketCalendar
 from dashboard.notifier import notifier
 
@@ -45,6 +46,7 @@ class AutomatedDualTrader:
     def __init__(self, starting_balance=25000, state_file='trader_state.json'):
         # Data clients
         self.data_fetcher = AlpacaDataFetcher()  # Live monitoring only
+        self.fallback_data_fetcher = PolygonDataFetcher()
         self.options_fetcher = PolygonOptionsFetcher()
         self.market_calendar = MarketCalendar()
         
@@ -103,7 +105,20 @@ class AutomatedDualTrader:
     def get_recent_bars(self, symbol: str, hours=0.083) -> pd.DataFrame:
         """Fetch recent 1-minute bars from Alpaca live data."""
         df = self.data_fetcher.get_recent_bars(symbol, lookback_minutes=max(60, int(hours * 60)))
-        return df if df is not None else pd.DataFrame()
+        if df is not None and len(df) > 0:
+            return df
+
+        end = datetime.now().date().isoformat()
+        start = (datetime.now() - timedelta(days=5)).date().isoformat()
+        try:
+            fallback_df = self.fallback_data_fetcher.fetch_stock_bars(symbol, start, end)
+            if fallback_df is not None and len(fallback_df) > 0:
+                print(f"⚠️  Using Polygon fallback bars for {symbol}")
+                return fallback_df
+        except Exception as e:
+            print(f"⚠️  Polygon fallback failed for {symbol}: {e}")
+
+        return pd.DataFrame()
 
     def start_watchdog(self):
         if self.watchdog_thread and self.watchdog_thread.is_alive():
