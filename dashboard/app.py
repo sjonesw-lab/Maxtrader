@@ -124,28 +124,21 @@ def get_state():
         state.open_positions = positions.get('conservative', []) + positions.get('aggressive', [])
         state.trade_history = trader_state.get('trade_history', state.trade_history)
         
-        # Check if auto-trader is actually running
         last_updated = trader_state.get('last_updated')
+        data_mode = 'LIVE'
         if last_updated:
-            from datetime import datetime
-            last_time = datetime.fromisoformat(last_updated)
-            seconds_since = (datetime.now() - last_time).total_seconds()
-            state.system_health['status'] = 'HEALTHY' if seconds_since <= 120 else 'STALE'
-        else:
-            state.system_health['status'] = 'NO_DATA'
-    else:
-        state.system_health['status'] = 'NO_DATA'
-    
-    # Determine if we're showing real or simulated data
-    data_mode = 'LIVE' if trader_state else 'NO_DATA'
-    if trader_state and trader_state.get('last_updated'):
-        try:
-            last_time = datetime.fromisoformat(trader_state['last_updated'])
-            if (datetime.now() - last_time).total_seconds() > 120:
+            try:
+                last_time = datetime.fromisoformat(last_updated)
+                if (datetime.now() - last_time).total_seconds() > 120:
+                    data_mode = 'STALE'
+            except:
                 data_mode = 'STALE'
-        except:
-            data_mode = 'STALE'
-    state.system_health['status'] = 'HEALTHY' if data_mode == 'LIVE' else data_mode
+        else:
+            data_mode = 'NO_DATA'
+        state.system_health['status'] = 'HEALTHY' if data_mode == 'LIVE' else data_mode
+    else:
+        data_mode = 'NO_DATA'
+        state.system_health['status'] = 'NO_DATA'
     
     return jsonify({
         'account_balance': state.account_balance,
