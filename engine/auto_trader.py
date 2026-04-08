@@ -104,6 +104,23 @@ class AutomatedDualTrader:
         """Fetch recent 1-minute bars from Alpaca live data."""
         df = self.data_fetcher.get_recent_bars(symbol, lookback_minutes=max(60, int(hours * 60)))
         return df if df is not None else pd.DataFrame()
+
+    def start_watchdog(self):
+        if self.watchdog_thread and self.watchdog_thread.is_alive():
+            return
+
+        def watchdog_loop():
+            import subprocess
+            while self.running:
+                time.sleep(300)
+                stale = (datetime.now() - self.main_loop_timestamp).total_seconds() > 600
+                if stale:
+                    print("⚠️  Trader stale; restarting process")
+                    self.save_state()
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        self.watchdog_thread = threading.Thread(target=watchdog_loop, daemon=True)
+        self.watchdog_thread.start()
     
     def calculate_atr(self, df: pd.DataFrame, period=14) -> float:
         """Calculate ATR."""
@@ -768,8 +785,7 @@ class AutomatedDualTrader:
         # Start reliability monitoring
         self.running = True
         self.start_heartbeat()
-        # Watchdog disabled - causes more problems than it solves (spam notifications, false kills)
-        # self.start_watchdog()
+        self.start_watchdog()
         
         # Startup notification (only send once per day to avoid spam on restarts)
         today = datetime.now().date().isoformat()
