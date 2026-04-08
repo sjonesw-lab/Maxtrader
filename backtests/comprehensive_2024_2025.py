@@ -218,170 +218,39 @@ print("="*80)
 print("ITM vs ATM Long Options (1 strike ITM vs At-The-Money)")
 print("="*80)
 
-# Define all available months
-all_months = []
-data_dir = Path('data/polygon_downloads')
+data_file = Path('data/QQQ_1m_2024_2025.csv')
+if not data_file.exists():
+    raise FileNotFoundError("Combined data file not found: data/QQQ_1m_2024_2025.csv")
 
-if data_dir.exists():
-    for file in sorted(data_dir.glob('QQQ_*_*_1min.csv')):
-        parts = file.stem.split('_')
-        if len(parts) >= 3:
-            year = parts[1]
-            month = parts[2]
-            all_months.append((year, month, file))
+provider = CSVDataProvider(str(data_file))
+df = provider.load_bars()
 
-print(f"\n📁 Found {len(all_months)} months of data")
+print(f"\n📁 Loaded combined file: {data_file}")
+print(f"   Bars: {len(df):,}")
+print(f"   Start: {df.iloc[0]['timestamp']}")
+print(f"   End: {df.iloc[-1]['timestamp']}")
 
-# Separate 2024 and 2025
-months_2024 = [(y, m, f) for y, m, f in all_months if y == '2024']
-months_2025 = [(y, m, f) for y, m, f in all_months if y == '2025']
+df = calculate_atr(df, period=14)
+df = label_sessions(df)
+df = add_session_highs_lows(df)
+df = detect_sweeps_strict(df)
+df = detect_displacement(df, threshold=1.0)
+df = detect_mss(df)
 
-print(f"   2024: {len(months_2024)} months")
-print(f"   2025: {len(months_2025)} months")
+signals = find_signals(df)
+print(f"\n🎯 Total Signals: {len(signals)}")
 
-# ============================================================================
-# TEST 2024 SEPARATELY
-# ============================================================================
+trades_atm, _ = backtest_with_strike_offset(df, signals, strike_offset=0)
+trades_itm, _ = backtest_with_strike_offset(df, signals, strike_offset=-5)
+metrics_atm = analyze_performance(trades_atm)
+metrics_itm = analyze_performance(trades_itm)
 
-if months_2024:
-    print("\n" + "="*80)
-    print("2024 BACKTEST")
-    print("="*80)
-    
-    data_2024 = []
-    for year, month, file in months_2024:
-        provider = CSVDataProvider(str(file))
-        df = provider.load_bars()
-        data_2024.append(df)
-        print(f"✓ Loaded {year}-{month}: {len(df)} bars")
-    
-    df_2024 = pd.concat(data_2024, ignore_index=True)
-    df_2024 = calculate_atr(df_2024, period=14)
-    df_2024 = label_sessions(df_2024)
-    df_2024 = add_session_highs_lows(df_2024)
-    df_2024 = detect_sweeps_strict(df_2024)
-    df_2024 = detect_displacement(df_2024, threshold=1.0)
-    df_2024 = detect_mss(df_2024)
-    
-    signals_2024 = find_signals(df_2024)
-    print(f"\n🎯 Total Signals: {len(signals_2024)}")
-    
-    # ATM
-    trades_atm_2024, final_atm_2024 = backtest_with_strike_offset(df_2024, signals_2024, strike_offset=0)
-    metrics_atm_2024 = analyze_performance(trades_atm_2024)
-    
-    # ITM
-    trades_itm_2024, final_itm_2024 = backtest_with_strike_offset(df_2024, signals_2024, strike_offset=-5)
-    metrics_itm_2024 = analyze_performance(trades_itm_2024)
-    
-    print(f"\n📊 ATM Results:")
-    print(f"   Trades: {metrics_atm_2024['trades']}, Win Rate: {metrics_atm_2024['win_rate']:.1f}%")
-    print(f"   Return: {metrics_atm_2024['return_pct']:.2f}%, Max DD: {metrics_atm_2024['max_dd_pct']:.2f}%")
-    print(f"   Final Balance: ${metrics_atm_2024['final_balance']:,.2f}")
-    
-    print(f"\n📊 ITM Results:")
-    print(f"   Trades: {metrics_itm_2024['trades']}, Win Rate: {metrics_itm_2024['win_rate']:.1f}%")
-    print(f"   Return: {metrics_itm_2024['return_pct']:.2f}%, Max DD: {metrics_itm_2024['max_dd_pct']:.2f}%")
-    print(f"   Final Balance: ${metrics_itm_2024['final_balance']:,.2f}")
+print(f"\n📊 ATM Results:")
+print(f"   Trades: {metrics_atm['trades']}, Win Rate: {metrics_atm['win_rate']:.1f}%")
+print(f"   Return: {metrics_atm['return_pct']:.2f}%, Max DD: {metrics_atm['max_dd_pct']:.2f}%")
+print(f"   Final Balance: ${metrics_atm['final_balance']:,.2f}")
 
-# ============================================================================
-# TEST 2025 SEPARATELY
-# ============================================================================
-
-if months_2025:
-    print("\n" + "="*80)
-    print("2025 YTD BACKTEST")
-    print("="*80)
-    
-    data_2025 = []
-    for year, month, file in months_2025:
-        provider = CSVDataProvider(str(file))
-        df = provider.load_bars()
-        data_2025.append(df)
-        print(f"✓ Loaded {year}-{month}: {len(df)} bars")
-    
-    df_2025 = pd.concat(data_2025, ignore_index=True)
-    df_2025 = calculate_atr(df_2025, period=14)
-    df_2025 = label_sessions(df_2025)
-    df_2025 = add_session_highs_lows(df_2025)
-    df_2025 = detect_sweeps_strict(df_2025)
-    df_2025 = detect_displacement(df_2025, threshold=1.0)
-    df_2025 = detect_mss(df_2025)
-    
-    signals_2025 = find_signals(df_2025)
-    print(f"\n🎯 Total Signals: {len(signals_2025)}")
-    
-    # ATM
-    trades_atm_2025, final_atm_2025 = backtest_with_strike_offset(df_2025, signals_2025, strike_offset=0)
-    metrics_atm_2025 = analyze_performance(trades_atm_2025)
-    
-    # ITM
-    trades_itm_2025, final_itm_2025 = backtest_with_strike_offset(df_2025, signals_2025, strike_offset=-5)
-    metrics_itm_2025 = analyze_performance(trades_itm_2025)
-    
-    print(f"\n📊 ATM Results:")
-    print(f"   Trades: {metrics_atm_2025['trades']}, Win Rate: {metrics_atm_2025['win_rate']:.1f}%")
-    print(f"   Return: {metrics_atm_2025['return_pct']:.2f}%, Max DD: {metrics_atm_2025['max_dd_pct']:.2f}%")
-    print(f"   Final Balance: ${metrics_atm_2025['final_balance']:,.2f}")
-    
-    print(f"\n📊 ITM Results:")
-    print(f"   Trades: {metrics_itm_2025['trades']}, Win Rate: {metrics_itm_2025['win_rate']:.1f}%")
-    print(f"   Return: {metrics_itm_2025['return_pct']:.2f}%, Max DD: {metrics_itm_2025['max_dd_pct']:.2f}%")
-    print(f"   Final Balance: ${metrics_itm_2025['final_balance']:,.2f}")
-
-# ============================================================================
-# COMPOUNDED RESULTS
-# ============================================================================
-
-print("\n" + "="*80)
-print("COMPOUNDED RESULTS (2024 → 2025)")
-print("="*80)
-
-if months_2024 and months_2025:
-    # ATM Compounded
-    atm_2024_ending = metrics_atm_2024['final_balance']
-    trades_atm_2025_comp, final_atm_comp = backtest_with_strike_offset(
-        df_2025, signals_2025, strike_offset=0, starting_capital=atm_2024_ending
-    )
-    total_atm_return = ((final_atm_comp - 25000) / 25000) * 100
-    
-    # ITM Compounded
-    itm_2024_ending = metrics_itm_2024['final_balance']
-    trades_itm_2025_comp, final_itm_comp = backtest_with_strike_offset(
-        df_2025, signals_2025, strike_offset=-5, starting_capital=itm_2024_ending
-    )
-    total_itm_return = ((final_itm_comp - 25000) / 25000) * 100
-    
-    print(f"\n💰 ATM Compounded:")
-    print(f"   Start (Jan 2024): $25,000")
-    print(f"   End 2024: ${atm_2024_ending:,.2f}")
-    print(f"   End 2025 YTD: ${final_atm_comp:,.2f}")
-    print(f"   Total Return: {total_atm_return:.2f}%")
-    
-    print(f"\n💰 ITM Compounded:")
-    print(f"   Start (Jan 2024): $25,000")
-    print(f"   End 2024: ${itm_2024_ending:,.2f}")
-    print(f"   End 2025 YTD: ${final_itm_comp:,.2f}")
-    print(f"   Total Return: {total_itm_return:.2f}%")
-    
-    print(f"\n🏆 ITM Advantage: {total_itm_return - total_atm_return:+.2f}% better")
-
-print("\n" + "="*80)
-print("SUMMARY TABLE")
-print("="*80)
-print(f"{'Period':<15} {'Strategy':<10} {'Return %':<12} {'Win Rate %':<12} {'Max DD %':<10}")
-print("-"*80)
-
-if months_2024:
-    print(f"{'2024':<15} {'ATM':<10} {metrics_atm_2024['return_pct']:<12.2f} {metrics_atm_2024['win_rate']:<12.1f} {metrics_atm_2024['max_dd_pct']:<10.2f}")
-    print(f"{'2024':<15} {'ITM':<10} {metrics_itm_2024['return_pct']:<12.2f} {metrics_itm_2024['win_rate']:<12.1f} {metrics_itm_2024['max_dd_pct']:<10.2f}")
-
-if months_2025:
-    print(f"{'2025 YTD':<15} {'ATM':<10} {metrics_atm_2025['return_pct']:<12.2f} {metrics_atm_2025['win_rate']:<12.1f} {metrics_atm_2025['max_dd_pct']:<10.2f}")
-    print(f"{'2025 YTD':<15} {'ITM':<10} {metrics_itm_2025['return_pct']:<12.2f} {metrics_itm_2025['win_rate']:<12.1f} {metrics_itm_2025['max_dd_pct']:<10.2f}")
-
-if months_2024 and months_2025:
-    print(f"{'COMPOUNDED':<15} {'ATM':<10} {total_atm_return:<12.2f} {'-':<12} {'-':<10}")
-    print(f"{'COMPOUNDED':<15} {'ITM':<10} {total_itm_return:<12.2f} {'-':<12} {'-':<10}")
-
-print("="*80 + "\n")
+print(f"\n📊 ITM Results:")
+print(f"   Trades: {metrics_itm['trades']}, Win Rate: {metrics_itm['win_rate']:.1f}%")
+print(f"   Return: {metrics_itm['return_pct']:.2f}%, Max DD: {metrics_itm['max_dd_pct']:.2f}%")
+print(f"   Final Balance: ${metrics_itm['final_balance']:,.2f}")
