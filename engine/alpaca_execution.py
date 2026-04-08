@@ -16,7 +16,7 @@ from alpaca.data.requests import OptionChainRequest
 
 
 class AlpacaOptionsExecutor:
-    """Handles options execution via Alpaca paper trading API."""
+    """Handles options execution via Alpaca in paper mode by default."""
     
     def __init__(self, paper: bool = True):
         """
@@ -147,6 +147,8 @@ class AlpacaOptionsExecutor:
                     time_in_force=TimeInForce.DAY
                 )
             
+            if self.paper:
+                return "paper-order-not-submitted"
             order = self.client.submit_order(order_data)
             
             print(f"Order submitted: {order.id}")

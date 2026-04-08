@@ -122,6 +122,7 @@ def get_state():
         # Update positions
         positions = trader_state.get('positions', {})
         state.open_positions = positions.get('conservative', []) + positions.get('aggressive', [])
+        state.trade_history = trader_state.get('trade_history', state.trade_history)
         
         # Check if auto-trader is actually running
         last_updated = trader_state.get('last_updated')

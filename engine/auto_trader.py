@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fully Automated QQQ-Only Paper Trading System
-Uses Polygon.io 1-minute bars (15-min delayed data) for live trading
+Uses Alpaca live bars for monitoring only
 Uses REAL Polygon.io options pricing for realistic 0DTE paper trading
 Executes both conservative (5% risk) and aggressive (5% risk) strategies
 QQQ-ONLY: 80.5% win rate vs 53% dual-symbol (SPY removed for performance)
@@ -44,7 +44,7 @@ class AutomatedDualTrader:
     
     def __init__(self, starting_balance=25000, state_file='trader_state.json'):
         # Data clients
-        self.data_fetcher = PolygonDataFetcher()  # Live trading (15-min delayed, but reliable)
+        self.data_fetcher = AlpacaDataFetcher()  # Live monitoring only
         self.options_fetcher = PolygonOptionsFetcher()
         self.market_calendar = MarketCalendar()
         
@@ -101,11 +101,11 @@ class AutomatedDualTrader:
         return self.market_calendar.is_market_open_now()
     
     def get_recent_bars(self, symbol: str, hours=0.083) -> pd.DataFrame:
-        """Fetch recent 1-minute bars from Polygon (live trading) for a specific symbol."""
+        """Fetch recent 1-minute bars from Alpaca for a specific symbol."""
         end = datetime.now()
         start = end - timedelta(hours=hours)
         
-        # Use Polygon for live trading (15-min delayed, but reliable)
+        # Use Alpaca for live monitoring only
         df = self.data_fetcher.fetch_stock_bars(
             ticker=symbol,
             from_date=start.strftime('%Y-%m-%d'),
@@ -253,6 +253,7 @@ class AutomatedDualTrader:
         }
         
         self.positions['conservative'].append(position)
+        self.save_state()
         
         # Notification
         notifier.send_notification(
@@ -328,6 +329,7 @@ class AutomatedDualTrader:
         }
         
         self.positions['aggressive'].append(position)
+        self.save_state()
         
         # Notification
         notifier.send_notification(
