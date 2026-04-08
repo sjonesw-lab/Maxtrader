@@ -4,10 +4,10 @@ Fetches real-time 1-minute bar data from Alpaca (for live trading)
 """
 import os
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from alpaca.data.live import StockDataStream
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
+from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest
 from alpaca.data.timeframe import TimeFrame
 
 
@@ -94,16 +94,11 @@ class AlpacaDataFetcher:
             raise
 
     def get_latest_bar(self, ticker):
-        request = StockBarsRequest(
-            symbol_or_symbols=ticker,
-            timeframe=TimeFrame.Minute,
-            start=datetime.utcnow(),
-            end=datetime.utcnow()
-        )
-        bars = self.client.get_stock_bars(request)
-        if not bars or ticker not in bars or len(bars[ticker]) == 0:
+        request = StockLatestBarRequest(symbol_or_symbols=ticker)
+        bars = self.client.get_stock_latest_bar(request)
+        if not bars or ticker not in bars:
             return None
-        bar = bars[ticker][-1]
+        bar = bars[ticker]
         return {
             'timestamp': bar.timestamp,
             'open': bar.open,
@@ -112,3 +107,21 @@ class AlpacaDataFetcher:
             'close': bar.close,
             'volume': bar.volume
         }
+
+    def get_live_bar_history(self, ticker, minutes=390):
+        end = datetime.utcnow()
+        start = end - timedelta(minutes=minutes)
+        request = StockBarsRequest(
+            symbol_or_symbols=ticker,
+            timeframe=TimeFrame.Minute,
+            start=start,
+            end=end
+        )
+        bars = self.client.get_stock_bars(request)
+        if not bars or ticker not in bars or len(bars[ticker]) == 0:
+            return pd.DataFrame()
+        df = bars.df.reset_index()
+        if 'timestamp' not in df.columns and 'index' in df.columns:
+            df = df.rename(columns={'index': 'timestamp'})
+        df.columns = [c.lower() for c in df.columns]
+        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].sort_values('timestamp').reset_index(drop=True)

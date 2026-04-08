@@ -101,21 +101,9 @@ class AutomatedDualTrader:
         return self.market_calendar.is_market_open_now()
     
     def get_recent_bars(self, symbol: str, hours=0.083) -> pd.DataFrame:
-        """Fetch recent 1-minute bars from Alpaca for a specific symbol."""
-        end = datetime.now()
-        start = end - timedelta(hours=hours)
-        
-        # Use Alpaca for live monitoring only
-        df = self.data_fetcher.fetch_stock_bars(
-            ticker=symbol,
-            from_date=start.strftime('%Y-%m-%d'),
-            to_date=end.strftime('%Y-%m-%d')
-        )
-        
-        if df is None or len(df) == 0:
-            return pd.DataFrame()
-        
-        return df
+        """Fetch recent 1-minute bars from Alpaca live data."""
+        df = self.data_fetcher.get_live_bar_history(symbol, minutes=max(60, int(hours * 60)))
+        return df if df is not None else pd.DataFrame()
     
     def calculate_atr(self, df: pd.DataFrame, period=14) -> float:
         """Calculate ATR."""
