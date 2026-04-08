@@ -135,7 +135,7 @@ def get_state():
         state.trade_history = trader_state.get('trade_history', state.trade_history)
         
         age_seconds = get_trader_state_age_seconds(trader_state)
-        data_mode = 'LIVE' if age_seconds is not None and age_seconds <= 120 else 'STALE' if age_seconds is not None else 'NO_DATA'
+        data_mode = 'LIVE' if age_seconds is not None else 'NO_DATA'
         state.system_health['status'] = 'HEALTHY' if data_mode == 'LIVE' else data_mode
     else:
         data_mode = 'NO_DATA'
