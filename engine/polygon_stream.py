@@ -33,7 +33,7 @@ class PolygonStreamHandler:
         
         self.client = WebSocketClient(
             api_key=api_key,
-            feed="stocks",
+            feed="delayed.polygon.io",
             market="stocks",
             verbose=True
         )
