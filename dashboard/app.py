@@ -30,6 +30,16 @@ def load_trader_state():
     return None
 
 
+def get_trader_state_age_seconds(trader_state):
+    last_updated = trader_state.get('last_updated') if trader_state else None
+    if not last_updated:
+        return None
+    try:
+        return (datetime.now() - datetime.fromisoformat(last_updated)).total_seconds()
+    except:
+        return None
+
+
 class DashboardState:
     """Centralized state management for the dashboard."""
     
@@ -124,17 +134,8 @@ def get_state():
         state.open_positions = positions.get('conservative', []) + positions.get('aggressive', [])
         state.trade_history = trader_state.get('trade_history', state.trade_history)
         
-        last_updated = trader_state.get('last_updated')
-        data_mode = 'LIVE'
-        if last_updated:
-            try:
-                last_time = datetime.fromisoformat(last_updated)
-                if (datetime.now() - last_time).total_seconds() > 120:
-                    data_mode = 'STALE'
-            except:
-                data_mode = 'STALE'
-        else:
-            data_mode = 'NO_DATA'
+        age_seconds = get_trader_state_age_seconds(trader_state)
+        data_mode = 'LIVE' if age_seconds is not None and age_seconds <= 120 else 'STALE' if age_seconds is not None else 'NO_DATA'
         state.system_health['status'] = 'HEALTHY' if data_mode == 'LIVE' else data_mode
     else:
         data_mode = 'NO_DATA'
@@ -153,6 +154,7 @@ def get_state():
         'vix_level': state.vix_level,
         'circuit_breakers': state.circuit_breakers,
         'data_mode': data_mode,
+        'trader_state_age_seconds': get_trader_state_age_seconds(trader_state),
         'safety_status': state.safety_status,
         'system_health': state.system_health,
         'performance_metrics': state.performance_metrics
