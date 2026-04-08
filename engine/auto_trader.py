@@ -886,9 +886,11 @@ class AutomatedDualTrader:
                         # Silently skip if data fetch fails (normal during pre-market)
                         pass
                 
-                # Not trading hours? Keep fetching data for dashboard but don't execute trades
+                # Not trading hours? Sleep until the next useful window instead of looping
                 if not should_trade:
-                    time.sleep(check_interval)
+                    next_session = self.market_calendar.time_until_next_session()
+                    print(f"[{now.strftime('%I:%M:%S %p ET')}] {market_status}")
+                    time.sleep(300)
                     continue
                 
                 # Only execute trades during market hours if we have data
