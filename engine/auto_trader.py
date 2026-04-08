@@ -741,6 +741,8 @@ class AutomatedDualTrader:
         def heartbeat_loop():
             while self.running:
                 self.heartbeat_timestamp = datetime.now()
+                self.main_loop_timestamp = datetime.now()
+                self.save_state()
                 time.sleep(5)
         
         self.heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
