@@ -102,7 +102,7 @@ class AutomatedDualTrader:
     
     def get_recent_bars(self, symbol: str, hours=0.083) -> pd.DataFrame:
         """Fetch recent 1-minute bars from Alpaca live data."""
-        df = self.data_fetcher.get_live_bar_history(symbol, minutes=max(60, int(hours * 60)))
+        df = self.data_fetcher.get_recent_bars(symbol, lookback_minutes=max(60, int(hours * 60)))
         return df if df is not None else pd.DataFrame()
     
     def calculate_atr(self, df: pd.DataFrame, period=14) -> float:

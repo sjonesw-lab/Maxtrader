@@ -37,61 +37,21 @@ class AlpacaDataFetcher:
         except Exception as e:
             print(f"⚠️  Error initializing Alpaca client: {str(e)}")
     
-    def fetch_stock_bars(self, ticker, from_date, to_date, limit=50000):
-        """
-        Fetch 1-minute stock bars from Alpaca
-        
-        Args:
-            ticker: Stock symbol (e.g., 'QQQ', 'SPY')
-            from_date: Start date (YYYY-MM-DD)
-            to_date: End date (YYYY-MM-DD)
-            limit: Max bars per request (default 50000)
-            
-        Returns:
-            DataFrame with columns: timestamp, open, high, low, close, volume
-        """
-        try:
-            # Parse dates
-            start = datetime.strptime(from_date, '%Y-%m-%d')
-            end = datetime.strptime(to_date, '%Y-%m-%d')
-            
-            # Request bars from Alpaca
-            request = StockBarsRequest(
-                symbol_or_symbols=ticker,
-                timeframe=TimeFrame.Minute,
-                start=start,
-                end=end,
-                limit=limit
-            )
-            
-            print(f"Fetching {ticker} bars from {start.date()} to {end.date()} (Alpaca)...")
-            bars = self.client.get_stock_bars(request)
-            
-            if not bars or ticker not in bars or len(bars[ticker]) == 0:
-                raise Exception(f"No data returned for {ticker}")
-            
-            # Convert to DataFrame
-            df_dict = {}
-            for bar in bars[ticker]:
-                df_dict.setdefault('timestamp', []).append(bar.timestamp)
-                df_dict.setdefault('open', []).append(bar.open)
-                df_dict.setdefault('high', []).append(bar.high)
-                df_dict.setdefault('low', []).append(bar.low)
-                df_dict.setdefault('close', []).append(bar.close)
-                df_dict.setdefault('volume', []).append(bar.volume)
-            
-            df = pd.DataFrame(df_dict)
-            df = df.sort_values('timestamp').reset_index(drop=True)
-            
-            # Filter to requested date range
-            df = df[(df['timestamp'].dt.date >= start.date()) & (df['timestamp'].dt.date <= end.date())]
-            
-            print(f"  ✓ Fetched {len(df):,} bars for {ticker}")
-            return df
-            
-        except Exception as e:
-            print(f"⚠️  Alpaca API error: {str(e)}")
-            raise
+    def get_recent_bars(self, symbol='QQQ', lookback_minutes=390):
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame.Minute,
+            start=datetime.utcnow() - timedelta(minutes=lookback_minutes),
+            end=datetime.utcnow()
+        )
+        bars = self.client.get_stock_bars(request)
+        if not bars or symbol not in bars or len(bars[symbol]) == 0:
+            return pd.DataFrame()
+        df = bars.df.reset_index()
+        if 'timestamp' not in df.columns and 'index' in df.columns:
+            df = df.rename(columns={'index': 'timestamp'})
+        df.columns = [c.lower() for c in df.columns]
+        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].sort_values('timestamp').reset_index(drop=True)
 
     def get_latest_bar(self, ticker):
         request = StockLatestBarRequest(symbol_or_symbols=ticker)
@@ -109,19 +69,4 @@ class AlpacaDataFetcher:
         }
 
     def get_live_bar_history(self, ticker, minutes=390):
-        end = datetime.utcnow()
-        start = end - timedelta(minutes=minutes)
-        request = StockBarsRequest(
-            symbol_or_symbols=ticker,
-            timeframe=TimeFrame.Minute,
-            start=start,
-            end=end
-        )
-        bars = self.client.get_stock_bars(request)
-        if not bars or ticker not in bars or len(bars[ticker]) == 0:
-            return pd.DataFrame()
-        df = bars.df.reset_index()
-        if 'timestamp' not in df.columns and 'index' in df.columns:
-            df = df.rename(columns={'index': 'timestamp'})
-        df.columns = [c.lower() for c in df.columns]
-        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].sort_values('timestamp').reset_index(drop=True)
+        return self.get_recent_bars(ticker, lookback_minutes=minutes)
