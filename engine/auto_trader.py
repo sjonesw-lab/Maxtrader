@@ -122,10 +122,8 @@ class AutomatedDualTrader:
                     updated = updated.tail(300).reset_index(drop=True)
                 self.bars_buffer[sym] = updated
 
-            handler = PolygonStreamHandler(symbol=symbol, callback=on_bar)
-            self.stream_handlers[symbol] = handler
-            thread = threading.Thread(target=handler.start, daemon=True)
-            thread.start()
+            self.data_fetcher.start_bar_stream(symbol=symbol, on_bar=on_bar)
+            self.stream_handlers[symbol] = True
 
     def start_watchdog(self):
         if self.watchdog_thread and self.watchdog_thread.is_alive():

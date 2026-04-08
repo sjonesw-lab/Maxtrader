@@ -4,7 +4,8 @@ Fetches real-time 1-minute bar data from Alpaca (for live trading)
 """
 import os
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
+from collections import deque
 from alpaca.data.live import StockDataStream
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest
@@ -33,25 +34,39 @@ class AlpacaDataFetcher:
         try:
             self.client = StockHistoricalDataClient(self.api_key, self.api_secret)
             self.stream = StockDataStream(self.api_key, self.api_secret)
+            self._buffers = {}
             print(f"✓ Alpaca client initialized ({'Paper' if paper else 'Live'} account)")
         except Exception as e:
             print(f"⚠️  Error initializing Alpaca client: {str(e)}")
     
+    def start_bar_stream(self, symbol='QQQ', on_bar=None, maxlen=300):
+        if symbol not in self._buffers:
+            self._buffers[symbol] = deque(maxlen=maxlen)
+
+        def handle_bar(bar):
+            row = {
+                'timestamp': bar.timestamp,
+                'open': bar.open,
+                'high': bar.high,
+                'low': bar.low,
+                'close': bar.close,
+                'volume': bar.volume
+            }
+            self._buffers[symbol].append(row)
+            if on_bar:
+                on_bar(row)
+
+        self.stream.subscribe_bars(handle_bar, symbol)
+        return self.stream
+
     def get_recent_bars(self, symbol='QQQ', lookback_minutes=390):
-        request = StockBarsRequest(
-            symbol_or_symbols=symbol,
-            timeframe=TimeFrame.Minute,
-            start=datetime.utcnow() - timedelta(minutes=lookback_minutes),
-            end=datetime.utcnow()
-        )
-        bars = self.client.get_stock_bars(request)
-        if not bars or symbol not in bars or len(bars[symbol]) == 0:
+        buf = self._buffers.get(symbol)
+        if not buf:
             return pd.DataFrame()
-        df = bars.df.reset_index()
-        if 'timestamp' not in df.columns and 'index' in df.columns:
-            df = df.rename(columns={'index': 'timestamp'})
-        df.columns = [c.lower() for c in df.columns]
-        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].sort_values('timestamp').reset_index(drop=True)
+        df = pd.DataFrame(list(buf))
+        if len(df) == 0:
+            return df
+        return df.sort_values('timestamp').reset_index(drop=True)
 
     def get_latest_bar(self, ticker):
         request = StockLatestBarRequest(symbol_or_symbols=ticker)
