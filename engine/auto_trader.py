@@ -25,9 +25,8 @@ import numpy as np
 from engine.sessions_liquidity import label_sessions, add_session_highs_lows
 from engine.ict_structures import detect_all_structures
 from engine.polygon_options_fetcher import PolygonOptionsFetcher
-from engine.polygon_data_fetcher import PolygonDataFetcher
 from engine.alpaca_data_fetcher import AlpacaDataFetcher
-from engine.polygon_data_fetcher import PolygonDataFetcher
+from engine.polygon_stream import PolygonStreamHandler
 from engine.market_calendar import MarketCalendar
 from dashboard.notifier import notifier
 
@@ -45,8 +44,7 @@ class AutomatedDualTrader:
     
     def __init__(self, starting_balance=25000, state_file='trader_state.json'):
         # Data clients
-        self.data_fetcher = AlpacaDataFetcher()  # Live monitoring only
-        self.fallback_data_fetcher = PolygonDataFetcher()
+        self.data_fetcher = AlpacaDataFetcher()
         self.options_fetcher = PolygonOptionsFetcher()
         self.market_calendar = MarketCalendar()
         
@@ -77,6 +75,8 @@ class AutomatedDualTrader:
         # Market data buffer (per symbol)
         self.bars_buffer = {symbol: pd.DataFrame() for symbol in self.symbols}
         self.last_signal_check = {symbol: None for symbol in self.symbols}
+        self.latest_prices = {symbol: None for symbol in self.symbols}
+        self.stream_handlers = {}
         
         # Reliability & monitoring
         self.heartbeat_timestamp = datetime.now()
@@ -103,22 +103,29 @@ class AutomatedDualTrader:
         return self.market_calendar.is_market_open_now()
     
     def get_recent_bars(self, symbol: str, hours=0.083) -> pd.DataFrame:
-        """Fetch recent 1-minute bars from Alpaca live data."""
-        df = self.data_fetcher.get_recent_bars(symbol, lookback_minutes=max(60, int(hours * 60)))
+        """Return buffered live bars for the symbol."""
+        df = self.bars_buffer.get(symbol)
         if df is not None and len(df) > 0:
             return df
-
-        end = datetime.now().date().isoformat()
-        start = (datetime.now() - timedelta(days=5)).date().isoformat()
-        try:
-            fallback_df = self.fallback_data_fetcher.fetch_stock_bars(symbol, start, end)
-            if fallback_df is not None and len(fallback_df) > 0:
-                print(f"⚠️  Using Polygon fallback bars for {symbol}")
-                return fallback_df
-        except Exception as e:
-            print(f"⚠️  Polygon fallback failed for {symbol}: {e}")
-
         return pd.DataFrame()
+
+    def start_market_streams(self):
+        for symbol in self.symbols:
+            if symbol in self.stream_handlers:
+                continue
+
+            def on_bar(bar, sym=symbol):
+                self.latest_prices[sym] = float(bar['close'])
+                current = self.bars_buffer.get(sym, pd.DataFrame())
+                updated = pd.concat([current, pd.DataFrame([bar])], ignore_index=True)
+                if len(updated) > 300:
+                    updated = updated.tail(300).reset_index(drop=True)
+                self.bars_buffer[sym] = updated
+
+            handler = PolygonStreamHandler(symbol=symbol, callback=on_bar)
+            self.stream_handlers[symbol] = handler
+            thread = threading.Thread(target=handler.start, daemon=True)
+            thread.start()
 
     def start_watchdog(self):
         if self.watchdog_thread and self.watchdog_thread.is_alive():
