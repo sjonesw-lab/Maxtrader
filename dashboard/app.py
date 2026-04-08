@@ -130,16 +130,11 @@ def get_state():
             from datetime import datetime
             last_time = datetime.fromisoformat(last_updated)
             seconds_since = (datetime.now() - last_time).total_seconds()
-            
-            if seconds_since > 120:  # No update in 2 minutes
-                state.system_health['status'] = 'STALE'
-            else:
-                state.system_health['status'] = 'HEALTHY'
+            state.system_health['status'] = 'HEALTHY' if seconds_since <= 120 else 'STALE'
         else:
             state.system_health['status'] = 'NO_DATA'
     else:
-        # No trader state file = auto-trader not running
-        state.system_health['status'] = 'NOT_RUNNING'
+        state.system_health['status'] = 'NO_DATA'
     
     # Determine if we're showing real or simulated data
     data_mode = 'LIVE' if trader_state else 'NO_DATA'
