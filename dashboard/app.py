@@ -143,6 +143,14 @@ def get_state():
     
     # Determine if we're showing real or simulated data
     data_mode = 'LIVE' if trader_state else 'NO_DATA'
+    if trader_state and trader_state.get('last_updated'):
+        try:
+            last_time = datetime.fromisoformat(trader_state['last_updated'])
+            if (datetime.now() - last_time).total_seconds() > 120:
+                data_mode = 'STALE'
+        except:
+            data_mode = 'STALE'
+    state.system_health['status'] = 'HEALTHY' if data_mode == 'LIVE' else data_mode
     
     return jsonify({
         'account_balance': state.account_balance,
