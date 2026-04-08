@@ -4,7 +4,8 @@ Fetches real-time 1-minute bar data from Alpaca (for live trading)
 """
 import os
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
+from alpaca.data.live import StockDataStream
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -31,6 +32,7 @@ class AlpacaDataFetcher:
         # Initialize Alpaca data client for live account
         try:
             self.client = StockHistoricalDataClient(self.api_key, self.api_secret)
+            self.stream = StockDataStream(self.api_key, self.api_secret)
             print(f"✓ Alpaca client initialized ({'Paper' if paper else 'Live'} account)")
         except Exception as e:
             print(f"⚠️  Error initializing Alpaca client: {str(e)}")
@@ -52,11 +54,6 @@ class AlpacaDataFetcher:
             # Parse dates
             start = datetime.strptime(from_date, '%Y-%m-%d')
             end = datetime.strptime(to_date, '%Y-%m-%d')
-            
-            # If requesting today's data (pre-market), extend to include yesterday + 2 days back
-            today = datetime.now().date()
-            if start.date() <= today <= end.date():
-                start = start - timedelta(days=5)  # Include last 5 days of data
             
             # Request bars from Alpaca
             request = StockBarsRequest(
@@ -95,3 +92,23 @@ class AlpacaDataFetcher:
         except Exception as e:
             print(f"⚠️  Alpaca API error: {str(e)}")
             raise
+
+    def get_latest_bar(self, ticker):
+        request = StockBarsRequest(
+            symbol_or_symbols=ticker,
+            timeframe=TimeFrame.Minute,
+            start=datetime.utcnow(),
+            end=datetime.utcnow()
+        )
+        bars = self.client.get_stock_bars(request)
+        if not bars or ticker not in bars or len(bars[ticker]) == 0:
+            return None
+        bar = bars[ticker][-1]
+        return {
+            'timestamp': bar.timestamp,
+            'open': bar.open,
+            'high': bar.high,
+            'low': bar.low,
+            'close': bar.close,
+            'volume': bar.volume
+        }
